@@ -66,7 +66,7 @@ require (
 	ocm.software/open-component-model/bindings/go/descriptor/normalisation v0.0.0-20250912092813-396078c6d574 // indirect
 	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20250919063228-9ba366336564 // indirect
 	ocm.software/open-component-model/bindings/go/descriptor/v2 v2.0.1-alpha3 // indirect
-	ocm.software/open-component-model/bindings/go/repository v0.0.0-20250909064434-e1a06fe74668 // indirect
+	ocm.software/open-component-model/bindings/go/repository v0.0.1 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
