@@ -220,6 +220,7 @@ gotest.tools/v3 v3.5.2 h1:7koQfIKdy+I8UTetycgUqXWSDwpgv193Ka+qRsmBY8Q=
 gotest.tools/v3 v3.5.2/go.mod h1:LtdLGcnqToBH83WByAAi/wiwSFCArdFIUV/xxN4pcjA=
 helm.sh/helm/v3 v3.19.2 h1:psQjaM8aIWrSVEly6PgYtLu/y6MRSmok4ERiGhZmtUY=
 helm.sh/helm/v3 v3.19.2/go.mod h1:gX10tB5ErM+8fr7bglUUS/UfTOO8UUTYWIBH1IYNnpE=
+helm.sh/helm/v4 v4.0.0/go.mod h1:G1Y5AE+lJPQSAjh7nbXnhZrtGtxo+I6POSu9DruYiGI=
 ocm.software/open-component-model/bindings/go/blob v0.0.10 h1:obAa1xSeoOqu7QfFTz2rvSSAsqXoilXPscQPN5Cyi64=
 ocm.software/open-component-model/bindings/go/blob v0.0.10/go.mod h1:ZBMUfs2JfIIAy8nhJMimxDJC0+KCUmegBPHuBYXjs+M=
 ocm.software/open-component-model/bindings/go/configuration v0.0.9 h1:bfgPD2G3fgmcbRYw0WXO3Fnx7+0G4gOV54JnYXgQY7w=
