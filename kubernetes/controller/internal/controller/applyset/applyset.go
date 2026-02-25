@@ -388,6 +388,7 @@ func (a *ApplySet) applyResource(
 		client.FieldOwner(options.FieldManager),
 	}
 
+	//nolint: staticcheck // metav1.ApplyOptions is deprecated
 	err := a.client.Patch(ctx, r.Object, client.Apply, patchOptions...)
 	if err != nil {
 		item.Error = err
