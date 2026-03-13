@@ -37,13 +37,14 @@ require (
 	ocm.software/open-component-model/bindings/go/credentials v0.0.7
 	ocm.software/open-component-model/bindings/go/ctf v0.3.0
 	ocm.software/open-component-model/bindings/go/descriptor/normalisation v0.0.0-20260313084546-9b60a41e6785
-	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260313084546-9b60a41e6785
+	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260313100728-5bf696d9b373
 	ocm.software/open-component-model/bindings/go/descriptor/v2 v2.0.1-alpha9
+	ocm.software/open-component-model/bindings/go/helm v0.0.0-20260313154304-d2d37f96a589
 	ocm.software/open-component-model/bindings/go/oci v0.0.35
 	ocm.software/open-component-model/bindings/go/plugin v0.0.14
 	ocm.software/open-component-model/bindings/go/repository v0.0.8
 	ocm.software/open-component-model/bindings/go/rsa v0.0.0-20260313084546-9b60a41e6785
-	ocm.software/open-component-model/bindings/go/runtime v0.0.6
+	ocm.software/open-component-model/bindings/go/runtime v0.0.7
 	ocm.software/open-component-model/bindings/go/signing v0.0.0-20260313084546-9b60a41e6785
 	sigs.k8s.io/release-utils v0.12.3
 )
@@ -93,7 +94,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.9.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -115,7 +115,6 @@ require (
 	github.com/veqryn/slog-context v0.9.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
