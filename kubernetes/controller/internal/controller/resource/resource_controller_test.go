@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/fluxcd/pkg/apis/meta"
+	"github.com/google/cel-go/cel"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +23,7 @@ import (
 	ocispec "ocm.software/open-component-model/bindings/go/oci/spec/access/v1"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/kubernetes/controller/api/v1alpha1"
+	ocmcel "ocm.software/open-component-model/kubernetes/controller/internal/cel"
 	"ocm.software/open-component-model/kubernetes/controller/internal/status"
 	"ocm.software/open-component-model/kubernetes/controller/internal/test"
 )
@@ -56,12 +58,8 @@ var _ = Describe("Resource Controller", func() {
 		})
 
 		type testCase struct {
-			Registry      string
-			Repository    string
-			Reference     string
-			HELMChart     string
-			GithubRepoURL string
-			GitRepository string
+			AdditionalSpec     map[string]apiextensionsv1.JSON
+			ExpectedAdditional map[string]apiextensionsv1.JSON
 		}
 
 		DescribeTable("reconciles a created resource",
@@ -92,26 +90,9 @@ var _ = Describe("Resource Controller", func() {
 					test.DeleteObject(ctx, k8sClient, componentObj)
 				})
 
-				additionalStatusFields := map[string]string{}
+				var additionalStatusFields map[string]apiextensionsv1.JSON
 				if tc != nil {
-					if tc.Registry != "" {
-						additionalStatusFields["registry"] = "resource.access.toOCI().registry"
-					}
-					if tc.Repository != "" {
-						additionalStatusFields["repository"] = "resource.access.toOCI().repository"
-					}
-					if tc.Reference != "" {
-						additionalStatusFields["reference"] = "resource.access.toOCI().reference"
-					}
-					if tc.HELMChart != "" {
-						additionalStatusFields["helmChart"] = "resource.access.helmChart"
-					}
-					if tc.GithubRepoURL != "" {
-						additionalStatusFields["gitRepoURL"] = "resource.access.repoUrl"
-					}
-					if tc.GitRepository != "" {
-						additionalStatusFields["gitRepository"] = "resource.access.repository"
-					}
+					additionalStatusFields = tc.AdditionalSpec
 				}
 
 				By("creating a resource")
@@ -148,26 +129,7 @@ var _ = Describe("Resource Controller", func() {
 				}
 
 				if tc != nil {
-					m := map[string]apiextensionsv1.JSON{}
-					if tc.Registry != "" {
-						m["registry"] = mustToJSON(tc.Registry)
-					}
-					if tc.Repository != "" {
-						m["repository"] = mustToJSON(tc.Repository)
-					}
-					if tc.Reference != "" {
-						m["reference"] = mustToJSON(tc.Reference)
-					}
-					if tc.HELMChart != "" {
-						m["helmChart"] = mustToJSON(tc.HELMChart)
-					}
-					if tc.GithubRepoURL != "" {
-						m["gitRepoURL"] = mustToJSON(tc.GithubRepoURL)
-					}
-					if tc.GitRepository != "" {
-						m["gitRepository"] = mustToJSON(tc.GitRepository)
-					}
-					fields["Status.Additional"] = m
+					fields["Status.Additional"] = tc.ExpectedAdditional
 				}
 
 				test.WaitForReadyObject(ctx, k8sClient, resourceObj, fields)
@@ -214,9 +176,19 @@ var _ = Describe("Resource Controller", func() {
 				}, ctfPath
 			},
 				&testCase{
-					Registry:   "ghcr.io",
-					Repository: "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
-					Reference:  "0.24.0@sha256:7a91508d9177f43552b60cfc0182d7c30a84e95bed03854855b3ab29b6a85db2",
+					AdditionalSpec: map[string]apiextensionsv1.JSON{
+						"oci": celExpr("resource.access.toOCI()"),
+					},
+					ExpectedAdditional: map[string]apiextensionsv1.JSON{
+						"oci": {Raw: mustMarshalJSON(map[string]string{
+							"digest":     "sha256:7a91508d9177f43552b60cfc0182d7c30a84e95bed03854855b3ab29b6a85db2",
+							"host":       "ghcr.io",
+							"reference":  "0.24.0@sha256:7a91508d9177f43552b60cfc0182d7c30a84e95bed03854855b3ab29b6a85db2",
+							"registry":   "ghcr.io",
+							"repository": "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
+							"tag":        "0.24.0",
+						})},
+					},
 				},
 			),
 			Entry("Helm access", func() ([]*descruntime.Descriptor, string) {
@@ -259,7 +231,12 @@ var _ = Describe("Resource Controller", func() {
 				}, ctfPath
 			},
 				&testCase{
-					HELMChart: "podinfo:6.9.1",
+					AdditionalSpec: map[string]apiextensionsv1.JSON{
+						"helmChart": celExpr("resource.access.helmChart"),
+					},
+					ExpectedAdditional: map[string]apiextensionsv1.JSON{
+						"helmChart": mustToJSON("podinfo:6.9.1"),
+					},
 				},
 			),
 			Entry("GitHub access", func() ([]*descruntime.Descriptor, string) {
@@ -303,7 +280,12 @@ var _ = Describe("Resource Controller", func() {
 				}, ctfPath
 			},
 				&testCase{
-					GithubRepoURL: "https://github.com/open-component-model/ocm-k8s-toolkit",
+					AdditionalSpec: map[string]apiextensionsv1.JSON{
+						"gitRepoURL": celExpr("resource.access.repoUrl"),
+					},
+					ExpectedAdditional: map[string]apiextensionsv1.JSON{
+						"gitRepoURL": mustToJSON("https://github.com/open-component-model/ocm-k8s-toolkit"),
+					},
 				},
 			),
 			Entry("git access", func() ([]*descruntime.Descriptor, string) {
@@ -346,7 +328,12 @@ var _ = Describe("Resource Controller", func() {
 				}, ctfPath
 			},
 				&testCase{
-					GitRepository: "https://github.com/open-component-model/ocm-k8s-toolkit",
+					AdditionalSpec: map[string]apiextensionsv1.JSON{
+						"gitRepository": celExpr("resource.access.repository"),
+					},
+					ExpectedAdditional: map[string]apiextensionsv1.JSON{
+						"gitRepository": mustToJSON("https://github.com/open-component-model/ocm-k8s-toolkit"),
+					},
 				},
 			),
 		)
@@ -683,10 +670,8 @@ var _ = Describe("Resource Controller", func() {
 							Resource: runtime.Identity{"name": resourceName},
 						},
 					},
-					AdditionalStatusFields: map[string]string{
-						"registry":   "resource.access.toOCI().registry",
-						"repository": "resource.access.toOCI().repository",
-						"reference":  "resource.access.toOCI().reference",
+					AdditionalStatusFields: map[string]apiextensionsv1.JSON{
+						"oci": celExpr("resource.access.toOCI()"),
 					},
 				},
 			}
@@ -712,9 +697,14 @@ var _ = Describe("Resource Controller", func() {
 				"Status.Resource.Name":       resourceName,
 				"Status.Resource.Type":       "ociArtifact",
 				"Status.Additional": map[string]apiextensionsv1.JSON{
-					"registry":   mustToJSON("ghcr.io"),
-					"repository": mustToJSON("open-component-model/ocm/ocm.software/ocmcli/ocmcli-image"),
-					"reference":  mustToJSON("0.24.0"),
+					"oci": {Raw: mustMarshalJSON(map[string]string{
+						"host":       "ghcr.io",
+						"registry":   "ghcr.io",
+						"repository": "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
+						"reference":  "0.24.0",
+						"tag":        "0.24.0",
+						"digest":     "",
+					})},
 				},
 			})
 		})
@@ -816,8 +806,8 @@ var _ = Describe("Resource Controller", func() {
 							Resource: runtime.Identity{"name": resourceName, "version": "1.0.0"},
 						},
 					},
-					AdditionalStatusFields: map[string]string{
-						"reference": "resource.access.toOCI().reference",
+					AdditionalStatusFields: map[string]apiextensionsv1.JSON{
+						"oci": celExpr("resource.access.toOCI()"),
 					},
 				},
 			}
@@ -829,7 +819,14 @@ var _ = Describe("Resource Controller", func() {
 			By("checking that the resource has been reconciled successfully")
 			test.WaitForReadyObject(ctx, k8sClient, resourceObj, map[string]any{
 				"Status.Additional": map[string]apiextensionsv1.JSON{
-					"reference": mustToJSON("0.23.0"),
+					"oci": {Raw: mustMarshalJSON(map[string]string{
+						"host":       "ghcr.io",
+						"registry":   "ghcr.io",
+						"repository": "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
+						"reference":  "0.23.0",
+						"tag":        "0.23.0",
+						"digest":     "",
+					})},
 				},
 			})
 
@@ -848,7 +845,14 @@ var _ = Describe("Resource Controller", func() {
 			test.WaitForReadyObject(ctx, k8sClient, resourceObj, map[string]any{
 				"Status.Resource.Version": resourceVersionUpdated,
 				"Status.Additional": map[string]apiextensionsv1.JSON{
-					"reference": mustToJSON("0.24.0"),
+					"oci": {Raw: mustMarshalJSON(map[string]string{
+						"host":       "ghcr.io",
+						"registry":   "ghcr.io",
+						"repository": "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
+						"reference":  "0.24.0",
+						"tag":        "0.24.0",
+						"digest":     "",
+					})},
 				},
 			})
 		})
@@ -931,8 +935,8 @@ var _ = Describe("Resource Controller", func() {
 							Resource: runtime.Identity{"name": resourceName},
 						},
 					},
-					AdditionalStatusFields: map[string]string{
-						"reference": "resource.access.toOCI().reference",
+					AdditionalStatusFields: map[string]apiextensionsv1.JSON{
+						"oci": celExpr("resource.access.toOCI()"),
 					},
 				},
 			}
@@ -942,14 +946,16 @@ var _ = Describe("Resource Controller", func() {
 			})
 
 			By("checking that the resource has been reconciled successfully")
-			expected := &testCase{
-				Registry:   "ghcr.io",
-				Repository: "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
-				Reference:  "0.23.0",
-			}
 			test.WaitForReadyObject(ctx, k8sClient, resourceObj, map[string]any{
 				"Status.Additional": map[string]apiextensionsv1.JSON{
-					"reference": mustToJSON(expected.Reference),
+					"oci": {Raw: mustMarshalJSON(map[string]string{
+						"host":       "ghcr.io",
+						"registry":   "ghcr.io",
+						"repository": "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
+						"reference":  "0.23.0",
+						"tag":        "0.23.0",
+						"digest":     "",
+					})},
 				},
 			})
 
@@ -1006,15 +1012,17 @@ var _ = Describe("Resource Controller", func() {
 
 			// component spec update should trigger resource reconciliation
 			By("checking that the resource was reconciled again")
-			expected = &testCase{
-				Registry:   "ghcr.io",
-				Repository: "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
-				Reference:  "0.24.0",
-			}
 			test.WaitForReadyObject(ctx, k8sClient, resourceObj, map[string]any{
 				"Status.Component.Version": componentVersionUpdated,
 				"Status.Additional": map[string]apiextensionsv1.JSON{
-					"reference": mustToJSON(expected.Reference),
+					"oci": {Raw: mustMarshalJSON(map[string]string{
+						"host":       "ghcr.io",
+						"registry":   "ghcr.io",
+						"repository": "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
+						"reference":  "0.24.0",
+						"tag":        "0.24.0",
+						"digest":     "",
+					})},
 				},
 			})
 		})
@@ -1120,8 +1128,8 @@ var _ = Describe("Resource Controller", func() {
 							ReferencePath: []runtime.Identity{{"name": nestedComponentReference}},
 						},
 					},
-					AdditionalStatusFields: map[string]string{
-						"reference": "resource.access.toOCI().reference",
+					AdditionalStatusFields: map[string]apiextensionsv1.JSON{
+						"oci": celExpr("resource.access.toOCI()"),
 					},
 				},
 			}
@@ -1133,7 +1141,14 @@ var _ = Describe("Resource Controller", func() {
 			By("checking that the resource has been reconciled successfully")
 			test.WaitForReadyObject(ctx, k8sClient, resourceObj, map[string]any{
 				"Status.Additional": map[string]apiextensionsv1.JSON{
-					"reference": mustToJSON("0.23.0"),
+					"oci": {Raw: mustMarshalJSON(map[string]string{
+						"host":       "ghcr.io",
+						"registry":   "ghcr.io",
+						"repository": "open-component-model/ocm/ocm.software/ocmcli/ocmcli-image",
+						"reference":  "0.23.0",
+						"tag":        "0.23.0",
+						"digest":     "",
+					})},
 				},
 				"Status.Component.Component": nestedComponentName,
 				"Status.Component.Version":   componentVersion,
@@ -1582,10 +1597,154 @@ var _ = Describe("Resource Controller Error Handling", func() {
 	})
 })
 
+var _ = Describe("processAdditionalFields", func() {
+	var env *cel.Env
+
+	BeforeEach(func() {
+		baseEnv, err := ocmcel.BaseEnv()
+		Expect(err).ToNot(HaveOccurred())
+		env, err = baseEnv.Extend(cel.Variable("resource", cel.DynType))
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("evaluates a plain string CEL expression", func(ctx SpecContext) {
+		fields := map[string]apiextensionsv1.JSON{
+			"name": celExpr("resource.name"),
+		}
+		resourceMap := map[string]any{
+			"name": "test-resource",
+		}
+		result, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result).To(HaveKey("name"))
+		Expect(result["name"].Raw).To(MatchJSON(`"test-resource"`))
+	})
+
+	It("evaluates a CEL expression returning a number", func(ctx SpecContext) {
+		fields := map[string]apiextensionsv1.JSON{
+			"count": celExpr("1 + 2"),
+		}
+		resourceMap := map[string]any{}
+		result, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result["count"].Raw).To(MatchJSON(`3`))
+	})
+
+	It("evaluates a CEL expression returning a map", func(ctx SpecContext) {
+		fields := map[string]apiextensionsv1.JSON{
+			"oci": celExpr("resource.access.toOCI()"),
+		}
+		resourceMap := map[string]any{
+			"access": map[string]any{
+				"imageReference": "ghcr.io/example/repo:1.0.0",
+			},
+		}
+		result, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result).To(HaveKey("oci"))
+
+		var oci map[string]string
+		Expect(json.Unmarshal(result["oci"].Raw, &oci)).To(Succeed())
+		Expect(oci["registry"]).To(Equal("ghcr.io"))
+		Expect(oci["repository"]).To(Equal("example/repo"))
+		Expect(oci["tag"]).To(Equal("1.0.0"))
+		Expect(oci["reference"]).To(Equal("1.0.0"))
+	})
+
+	It("evaluates individual toOCI field access (legacy pattern)", func(ctx SpecContext) {
+		fields := map[string]apiextensionsv1.JSON{
+			"registry":   celExpr("resource.access.imageReference.toOCI().registry"),
+			"repository": celExpr("resource.access.imageReference.toOCI().repository"),
+			"reference":  celExpr("resource.access.imageReference.toOCI().reference"),
+			"digest":     celExpr("resource.access.imageReference.toOCI().digest"),
+			"tag":        celExpr("resource.access.imageReference.toOCI().tag"),
+		}
+		resourceMap := map[string]any{
+			"access": map[string]any{
+				"imageReference": "ghcr.io/example/repo:1.0.0",
+			},
+		}
+		result, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result["registry"].Raw).To(MatchJSON(`"ghcr.io"`))
+		Expect(result["repository"].Raw).To(MatchJSON(`"example/repo"`))
+		Expect(result["reference"].Raw).To(MatchJSON(`"1.0.0"`))
+		Expect(result["tag"].Raw).To(MatchJSON(`"1.0.0"`))
+		Expect(result["digest"].Raw).To(MatchJSON(`""`))
+	})
+
+	It("evaluates toOCI on access map directly (shorthand)", func(ctx SpecContext) {
+		fields := map[string]apiextensionsv1.JSON{
+			"registry":   celExpr("resource.access.toOCI().registry"),
+			"repository": celExpr("resource.access.toOCI().repository"),
+			"reference":  celExpr("resource.access.toOCI().reference"),
+		}
+		resourceMap := map[string]any{
+			"access": map[string]any{
+				"imageReference": "ghcr.io/example/repo:2.0.0",
+			},
+		}
+		result, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result["registry"].Raw).To(MatchJSON(`"ghcr.io"`))
+		Expect(result["repository"].Raw).To(MatchJSON(`"example/repo"`))
+		Expect(result["reference"].Raw).To(MatchJSON(`"2.0.0"`))
+	})
+
+	It("evaluates nested objects with CEL expressions", func(ctx SpecContext) {
+		nested, err := json.Marshal(map[string]string{
+			"name":    "resource.name",
+			"version": "resource.version",
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		fields := map[string]apiextensionsv1.JSON{
+			"info": {Raw: nested},
+		}
+		resourceMap := map[string]any{
+			"name":    "test-resource",
+			"version": "1.0.0",
+		}
+		result, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result).To(HaveKey("info"))
+
+		var nestedResult map[string]json.RawMessage
+		Expect(json.Unmarshal(result["info"].Raw, &nestedResult)).To(Succeed())
+		Expect(nestedResult["name"]).To(MatchJSON(`"test-resource"`))
+		Expect(nestedResult["version"]).To(MatchJSON(`"1.0.0"`))
+	})
+
+	It("rejects invalid value types", func(ctx SpecContext) {
+		fields := map[string]apiextensionsv1.JSON{
+			"bad": {Raw: []byte(`42`)},
+		}
+		resourceMap := map[string]any{}
+		_, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("must be a CEL expression string or an object"))
+	})
+
+	It("rejects array values", func(ctx SpecContext) {
+		fields := map[string]apiextensionsv1.JSON{
+			"bad": {Raw: []byte(`["a","b"]`)},
+		}
+		resourceMap := map[string]any{}
+		_, err := processAdditionalFields(ctx, env, resourceMap, fields)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("must be a CEL expression string or an object"))
+	})
+})
+
 func mustToJSON(v string) apiextensionsv1.JSON {
 	raw, err := json.Marshal(v)
 	Expect(err).ToNot(HaveOccurred())
 	return apiextensionsv1.JSON{Raw: raw}
+}
+
+// celExpr wraps a CEL expression string as apiextensionsv1.JSON for use in AdditionalStatusFields.
+func celExpr(expr string) apiextensionsv1.JSON {
+	return mustToJSON(expr)
 }
 
 func mustMarshalJSON(v any) []byte {
