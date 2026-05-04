@@ -1,166 +1,164 @@
-package sync
+package sync_test
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	dagsync "ocm.software/open-component-model/bindings/go/dag/sync"
+	"ocm.software/open-component-model/bindings/go/dag/sync/queue"
+	"ocm.software/open-component-model/bindings/go/dag/sync/spawn"
 )
 
-func TestDAGDiscovery(t *testing.T) {
+type algorithmCase[K cmp.Ordered, V any] struct {
+	name      string
+	algorithm dagsync.DiscoveryAlgorithm[K, V]
+}
 
-	t.Run("graph discovery succeeds", func(t *testing.T) {
-		ctx := t.Context()
-		r := require.New(t)
-		// Emulate external dependency graph.
-		// In real-world scenarios, this information would likely be retrieved from
-		// an API (such as an OCM Repository).
-		graph := map[string][]string{
-			"A": {"B", "C"},
-			"B": {"D"},
-			"C": {"D"},
-			"D": {},
-		}
+func allAlgorithms[V any]() []algorithmCase[string, V] {
+	return []algorithmCase[string, V]{
+		{name: "spawn", algorithm: &spawn.Algorithm[string, V]{}},
+		{name: "queue/workers=1", algorithm: &queue.Algorithm[string, V]{Workers: 1}},
+		{name: "queue/workers=4", algorithm: &queue.Algorithm[string, V]{Workers: 4}},
+		{name: "queue/default", algorithm: &queue.Algorithm[string, V]{}},
+	}
+}
 
-		dag := NewGraphDiscoverer(&GraphDiscovererOptions[string, string]{
-			Roots: []string{"A", "B", "C", "D"},
-			Resolver: ResolverFunc[string, string](func(ctx context.Context, key string) (value string, err error) {
-				// Simulate fetching a node from an external repository.
-				// In a real-world scenario, this would likely be an API call (such
-				// as OCM GetComponentVersion)
-				if _, ok := graph[key]; !ok {
-					return "", fmt.Errorf("no node found with ID %s", key)
-				}
-				return key, nil
-			}),
-			Discoverer: DiscovererFunc[string, string](func(ctx context.Context, parent string) (children []string, err error) {
-				// simulate evaluating dependencies for a parent node.
-				dep, ok := graph[parent]
-				if !ok {
-					return nil, fmt.Errorf("no node found with ID %s", parent)
-				}
-				var neighbors []string
-				for _, id := range dep {
-					neighbors = append(neighbors, id)
-				}
-				return neighbors, nil
-			}),
-		})
-		// Start the discovery from multiple roots
-		r.NoError(dag.Discover(ctx))
-
-		// Check if the graph structure is as expected
-		r.ElementsMatchf(dag.CurrentEdges("A"), []string{"B", "C"}, "expected edges from A to B and C, but got %v", dag.CurrentEdges("A"))
-		r.ElementsMatchf(dag.CurrentEdges("B"), []string{"D"}, "expected edge from B to D, but got %v", dag.CurrentEdges("B"))
-		r.ElementsMatchf(dag.CurrentEdges("C"), []string{"D"}, "expected edge from C to D, but got %v", dag.CurrentEdges("C"))
-		r.ElementsMatchf(dag.CurrentEdges("D"), []string{}, "expected no edges from D, but got %v", dag.CurrentEdges("D"))
-
-		// As Discover uses addRawVertex and AddEdge internally, which are unit tested
-		// separately, we can assume out degree and in degree are correct if the
-		// graph structure is correct.
+func makeDiscoverer[V any](alg dagsync.DiscoveryAlgorithm[string, V], roots []string, res dagsync.ResolverFunc[string, V], dis dagsync.DiscovererFunc[string, V]) *dagsync.GraphDiscoverer[string, V] {
+	return dagsync.NewGraphDiscoverer(&dagsync.GraphDiscovererOptions[string, V]{
+		Algorithm:  alg,
+		Roots:      roots,
+		Resolver:   res,
+		Discoverer: dis,
 	})
+}
 
-	t.Run("graph discovery fails with canceled context", func(t *testing.T) {
-		ctx := t.Context()
-		r := require.New(t)
-		ctx, cancel := context.WithCancel(ctx)
-		// Simulate a context cancellation
-		cancel()
-
-		dag := NewGraphDiscoverer(&GraphDiscovererOptions[string, string]{
-			Roots: []string{"A"},
-			Resolver: ResolverFunc[string, string](func(ctx context.Context, key string) (value string, err error) {
-
-				return "", fmt.Errorf("we should never reach this point due to context cancellation")
-			}),
+func TestDiscoveryAlgorithms_Diamond(t *testing.T) {
+	graph := map[string][]string{
+		"A": {"B", "C"},
+		"B": {"D"},
+		"C": {"D"},
+		"D": {},
+	}
+	for _, tc := range allAlgorithms[string]() {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			d := makeDiscoverer(
+				tc.algorithm,
+				[]string{"A"},
+				dagsync.ResolverFunc[string, string](func(_ context.Context, key string) (string, error) {
+					if _, ok := graph[key]; !ok {
+						return "", fmt.Errorf("unknown node %s", key)
+					}
+					return key, nil
+				}),
+				dagsync.DiscovererFunc[string, string](func(_ context.Context, parent string) ([]string, error) {
+					return graph[parent], nil
+				}),
+			)
+			r.NoError(d.Discover(t.Context()))
+			r.ElementsMatch(d.CurrentEdges("A"), []string{"B", "C"})
+			r.ElementsMatch(d.CurrentEdges("B"), []string{"D"})
+			r.ElementsMatch(d.CurrentEdges("C"), []string{"D"})
+			r.Empty(d.CurrentEdges("D"))
+			r.Equal(dagsync.DiscoveryStateCompleted, d.CurrentState("A"))
+			r.Equal(dagsync.DiscoveryStateCompleted, d.CurrentState("D"))
 		})
+	}
+}
 
-		err := dag.Discover(ctx)
-		r.ErrorIsf(err, context.Canceled, "expected error due to context cancellation, but got nil")
-	})
-
-	t.Run("graph discovery fails in discovery function", func(t *testing.T) {
-		ctx := t.Context()
-		r := require.New(t)
-		// Emulate an invalid external dependency graph. Here, the edge C -> D
-		// exists, but D is not found in the graph.
-		//    A
-		//   / \
-		//  B   C
-		//   \ /
-		//   (D)*
-		graph := map[string][]string{
-			"A": {"B", "C"},
-			"C": {"D"},
-		}
-		dag := NewGraphDiscoverer(&GraphDiscovererOptions[string, string]{
-			Roots: []string{"A"},
-			Resolver: ResolverFunc[string, string](func(ctx context.Context, key string) (value string, err error) {
-				if _, ok := graph[key]; !ok {
-					return "", fmt.Errorf("no node found with ID %s", key)
-				}
-				return key, nil
-			}),
-			Discoverer: DiscovererFunc[string, string](func(ctx context.Context, parent string) (children []string, err error) {
-				dep, ok := graph[parent]
-				if !ok {
-					return nil, fmt.Errorf("no node found with ID %s", parent)
-				}
-				var neighbors []string
-				for _, id := range dep {
-					neighbors = append(neighbors, id)
-				}
-				return neighbors, nil
-			}),
+func TestDiscoveryAlgorithms_MultiRoot(t *testing.T) {
+	graph := map[string][]string{
+		"A": {"C"},
+		"B": {"C"},
+		"C": {},
+	}
+	for _, tc := range allAlgorithms[string]() {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			d := makeDiscoverer(
+				tc.algorithm,
+				[]string{"A", "B"},
+				dagsync.ResolverFunc[string, string](func(_ context.Context, key string) (string, error) {
+					return key, nil
+				}),
+				dagsync.DiscovererFunc[string, string](func(_ context.Context, parent string) ([]string, error) {
+					return graph[parent], nil
+				}),
+			)
+			r.NoError(d.Discover(t.Context()))
+			r.ElementsMatch(d.CurrentEdges("A"), []string{"C"})
+			r.ElementsMatch(d.CurrentEdges("B"), []string{"C"})
+			r.Empty(d.CurrentEdges("C"))
 		})
+	}
+}
 
-		err := dag.Discover(ctx)
-		r.Error(err, "expected error due to missing node in the external graph, but got nil")
-
-		aState := dag.CurrentState("A")
-		r.Equal(DiscoveryStateError, aState, "expected vertex A to be in error state, but got %s", aState)
-
-		// because of discovers property to abort early, if 2 nodes on the layer are running in parallel,
-		// and one of them fails, the other one might be in an unknown state as it might not have yet been discovered.
-		bState := dag.CurrentState("B")
-		r.Contains([]DiscoveryState{DiscoveryStateError, DiscoveryStateUnknown}, bState, "expected vertex B to be in error state, but got %s", bState)
-		cState := dag.CurrentState("C")
-		r.Contains([]DiscoveryState{DiscoveryStateError, DiscoveryStateUnknown}, cState, "expected vertex C to be in error state, but got %s", cState)
-	})
-
-	t.Run("graph discovery fails in discovery function", func(t *testing.T) {
-		ctx := t.Context()
-		r := require.New(t)
-		// Emulate an invalid external dependency graph. Here, the edge C -> D
-		// exists, but D is not found in the graph.
-		graph := map[string][]string{
-			"B": {},
-		}
-		dag := NewGraphDiscoverer(&GraphDiscovererOptions[string, string]{
-			Roots: []string{"B"},
-			Resolver: ResolverFunc[string, string](func(ctx context.Context, key string) (value string, err error) {
-				if _, ok := graph[key]; !ok {
-					return "", fmt.Errorf("no node found with ID %s", key)
-				}
-				return key, nil
-			}),
-			Discoverer: DiscovererFunc[string, string](func(ctx context.Context, parent string) (children []string, err error) {
-				dep, ok := graph[parent]
-				if !ok {
-					return nil, fmt.Errorf("no node found with ID %s", parent)
-				}
-				var neighbors []string
-				for _, id := range dep {
-					neighbors = append(neighbors, id)
-				}
-				return neighbors, nil
-			}),
+func TestDiscoveryAlgorithms_ContextCanceled(t *testing.T) {
+	for _, tc := range allAlgorithms[string]() {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			d := makeDiscoverer(
+				tc.algorithm,
+				[]string{"A"},
+				dagsync.ResolverFunc[string, string](func(_ context.Context, _ string) (string, error) {
+					return "", fmt.Errorf("should not be called")
+				}),
+				nil,
+			)
+			r.Error(d.Discover(ctx))
 		})
+	}
+}
 
-		err := dag.Discover(ctx)
-		r.NoError(err)
+func TestDiscoveryAlgorithms_ResolverError(t *testing.T) {
+	graph := map[string][]string{
+		"A": {"B", "C"},
+		"C": {"D"},
+	}
+	for _, tc := range allAlgorithms[string]() {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			d := makeDiscoverer(
+				tc.algorithm,
+				[]string{"A"},
+				dagsync.ResolverFunc[string, string](func(_ context.Context, key string) (string, error) {
+					if _, ok := graph[key]; !ok {
+						return "", fmt.Errorf("no node found with ID %s", key)
+					}
+					return key, nil
+				}),
+				dagsync.DiscovererFunc[string, string](func(_ context.Context, parent string) ([]string, error) {
+					dep, ok := graph[parent]
+					if !ok {
+						return nil, fmt.Errorf("no node found with ID %s", parent)
+					}
+					return dep, nil
+				}),
+			)
+			r.Error(d.Discover(t.Context()))
+		})
+	}
+}
 
-		r.Equal(dag.CurrentState("B"), DiscoveryStateCompleted, "expected vertex B to be in completed state, but got %s", dag.CurrentState("B"))
+func TestDiscovery_NoAlgorithm(t *testing.T) {
+	r := require.New(t)
+	d := dagsync.NewGraphDiscoverer(&dagsync.GraphDiscovererOptions[string, string]{
+		Roots:    []string{"A"},
+		Resolver: dagsync.ResolverFunc[string, string](func(_ context.Context, key string) (string, error) { return key, nil }),
 	})
+	r.Error(d.Discover(t.Context()))
+}
+
+func TestDiscovery_NoRoots(t *testing.T) {
+	r := require.New(t)
+	d := dagsync.NewGraphDiscoverer(&dagsync.GraphDiscovererOptions[string, string]{
+		Algorithm: &spawn.Algorithm[string, string]{},
+	})
+	r.Error(d.Discover(t.Context()))
 }

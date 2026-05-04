@@ -18,6 +18,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/credentials"
 	"ocm.software/open-component-model/bindings/go/dag"
 	syncdag "ocm.software/open-component-model/bindings/go/dag/sync"
+	"ocm.software/open-component-model/bindings/go/dag/sync/spawn"
 	"ocm.software/open-component-model/bindings/go/descriptor/normalisation"
 	"ocm.software/open-component-model/bindings/go/descriptor/normalisation/json/v4alpha1"
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
@@ -187,6 +188,7 @@ func buildDiscoverer(componentConstructor *constructor.ComponentConstructor, opt
 		resolveExternalLocalBlobs:           opts.ExternalComponentVersionCopyPolicy == ExternalComponentVersionCopyPolicyCopyOrFail,
 	}
 	graphDiscoverer := syncdag.NewGraphDiscoverer(&syncdag.GraphDiscovererOptions[string, *ConstructorOrExternalComponent]{
+		Algorithm:  &spawn.Algorithm[string, *ConstructorOrExternalComponent]{},
 		Roots:      roots,
 		Resolver:   &resAndDis,
 		Discoverer: &resAndDis,

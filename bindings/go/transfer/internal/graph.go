@@ -8,6 +8,7 @@ import (
 
 	"ocm.software/open-component-model/bindings/go/dag"
 	dagsync "ocm.software/open-component-model/bindings/go/dag/sync"
+	"ocm.software/open-component-model/bindings/go/dag/sync/spawn"
 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	descriptorv2 "ocm.software/open-component-model/bindings/go/descriptor/v2"
 	helmv1 "ocm.software/open-component-model/bindings/go/helm/spec/access/v1"
@@ -116,6 +117,7 @@ func BuildGraphDefinition(
 		"roots", dagRoots, "recursive", recursive)
 
 	dr := dagsync.NewGraphDiscoverer(&dagsync.GraphDiscovererOptions[string, *discoveryValue]{
+		Algorithm:  &spawn.Algorithm[string, *discoveryValue]{},
 		Roots:      dagRoots,
 		Resolver:   res,
 		Discoverer: disc,
