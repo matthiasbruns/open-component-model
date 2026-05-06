@@ -35,12 +35,11 @@ import (
 	"ocm.software/open-component-model/bindings/go/oci/repository/resource"
 	urlresolver "ocm.software/open-component-model/bindings/go/oci/resolver/url"
 	ociaccessv1 "ocm.software/open-component-model/bindings/go/oci/spec/access/v1"
-	credidentity "ocm.software/open-component-model/bindings/go/oci/spec/credentials/identity/v1"
+	credidentity "ocm.software/open-component-model/bindings/go/oci/spec/identity/v1"
 	ctfrepospec "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/ctf"
 	ocirepospec "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/oci"
 	"ocm.software/open-component-model/bindings/go/repository"
 	"ocm.software/open-component-model/bindings/go/runtime"
-
 	"ocm.software/open-component-model/bindings/go/transfer"
 )
 
