@@ -17,6 +17,7 @@ import (
 
 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	gpgcredentials "ocm.software/open-component-model/bindings/go/gpg/signing/handler/internal/credentials"
+	gpgcredspec "ocm.software/open-component-model/bindings/go/gpg/spec/credentials"
 	gpgcredentialsv1 "ocm.software/open-component-model/bindings/go/gpg/spec/credentials/v1alpha1"
 	identityv1 "ocm.software/open-component-model/bindings/go/gpg/spec/identity/v1alpha1"
 	"ocm.software/open-component-model/bindings/go/gpg/spec/signing/v1alpha1"
@@ -42,6 +43,10 @@ func New(_ *runtime.Scheme) (*Handler, error) {
 // GetSigningHandlerScheme returns the scheme for this handler's config types.
 func (h *Handler) GetSigningHandlerScheme() *runtime.Scheme {
 	return v1alpha1.Scheme
+}
+
+func (h *Handler) GetCredentialTypeScheme() *runtime.Scheme {
+	return gpgcredspec.Scheme
 }
 
 // Sign produces an ASCII-armored OpenPGP detached signature over the digest bytes.

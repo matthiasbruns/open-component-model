@@ -409,6 +409,6 @@ func TestCredentialTypeRegistryPopulatedFromPlugin(t *testing.T) {
 		}
 	})
 
-	scheme := pm.CredentialRepositoryRegistry.GetCredentialTypeScheme()
+	scheme := pm.CredentialTypeRegistry.Scheme()
 	require.True(t, scheme.IsRegistered(runtime.NewVersionedType("DummyToken", "v1")))
 }

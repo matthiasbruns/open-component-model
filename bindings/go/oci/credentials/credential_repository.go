@@ -21,6 +21,14 @@ import (
 // - Token-based authentication (access tokens and refresh tokens)
 type OCICredentialRepository struct{}
 
+// GetCredentialTypeScheme returns the scheme containing OCI credential payload types
+// (currently OCICredentials/v1). This satisfies credentials.CredentialTypeSchemeProvider
+// so the type is auto-registered when OCICredentialRepository is registered via
+// RegisterInternalCredentialRepositoryPlugin.
+func (p *OCICredentialRepository) GetCredentialTypeScheme() *runtime.Scheme {
+	return ocicredentials.CredentialTypeScheme
+}
+
 func (p *OCICredentialRepository) GetCredentialRepositoryScheme() *runtime.Scheme {
 	return ocicredentials.Scheme
 }

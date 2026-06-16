@@ -5,13 +5,13 @@ import (
 	ocicredentialsspec "ocm.software/open-component-model/bindings/go/oci/spec/credentials"
 	ociidentity "ocm.software/open-component-model/bindings/go/oci/spec/identity/v1"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialrepository"
+	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialtype"
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
-func Register(registry *credentialrepository.RepositoryRegistry) error {
-	registry.Register(ocicredentialsspec.Scheme)
-
-	return registry.RegisterInternalCredentialRepositoryPlugin(
+func Register(repoRegistry *credentialrepository.RepositoryRegistry, credTypeRegistry *credentialtype.Registry) error {
+	credTypeRegistry.Register(ocicredentialsspec.CredentialTypeScheme)
+	return repoRegistry.RegisterInternalCredentialRepositoryPlugin(
 		&ocicredentials.OCICredentialRepository{},
 		[]runtime.Type{ociidentity.Type},
 	)

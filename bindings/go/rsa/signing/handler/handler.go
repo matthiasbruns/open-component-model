@@ -25,6 +25,7 @@ import (
 	rsasignature "ocm.software/open-component-model/bindings/go/rsa/signing/handler/internal/pem"
 	"ocm.software/open-component-model/bindings/go/rsa/signing/handler/internal/rfc2253"
 	"ocm.software/open-component-model/bindings/go/rsa/signing/v1alpha1"
+	rsacredspec "ocm.software/open-component-model/bindings/go/rsa/spec/credentials"
 	rsacredentialsv1 "ocm.software/open-component-model/bindings/go/rsa/spec/credentials/v1"
 	identityv1 "ocm.software/open-component-model/bindings/go/rsa/spec/identity/v1"
 	"ocm.software/open-component-model/bindings/go/runtime"
@@ -63,6 +64,10 @@ func New(scheme *runtime.Scheme, useSystemRoots bool) (*Handler, error) {
 
 func (h *Handler) GetSigningHandlerScheme() *runtime.Scheme {
 	return v1alpha1.Scheme
+}
+
+func (h *Handler) GetCredentialTypeScheme() *runtime.Scheme {
+	return rsacredspec.Scheme
 }
 
 // ---- SPI ----

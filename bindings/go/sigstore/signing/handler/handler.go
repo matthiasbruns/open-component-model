@@ -21,7 +21,9 @@ import (
 	"ocm.software/open-component-model/bindings/go/signing"
 	"ocm.software/open-component-model/bindings/go/sigstore/signing/handler/internal"
 	"ocm.software/open-component-model/bindings/go/sigstore/signing/v1alpha1"
+	"ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/oidcidentitytoken"
 	oidcv1 "ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/oidcidentitytoken/v1alpha1"
+	"ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/trustedroot"
 	trustedrootv1 "ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/trustedroot/v1alpha1"
 	signerv1 "ocm.software/open-component-model/bindings/go/sigstore/spec/identity/signer/v1alpha1"
 	verifierv1 "ocm.software/open-component-model/bindings/go/sigstore/spec/identity/verifier/v1alpha1"
@@ -51,6 +53,19 @@ func New(opts ...HandlerOption) *Handler {
 // GetSigningHandlerScheme returns the runtime.Scheme containing registered config types.
 func (h *Handler) GetSigningHandlerScheme() *runtime.Scheme {
 	return v1alpha1.Scheme
+}
+
+// sigstoreCredentialTypeScheme merges the two Sigstore credential payload type schemes
+// into one so they can be returned from a single GetCredentialTypeScheme call.
+var sigstoreCredentialTypeScheme = func() *runtime.Scheme {
+	s := runtime.NewScheme()
+	s.MustRegisterScheme(oidcidentitytoken.Scheme)
+	s.MustRegisterScheme(trustedroot.Scheme)
+	return s
+}()
+
+func (h *Handler) GetCredentialTypeScheme() *runtime.Scheme {
+	return sigstoreCredentialTypeScheme
 }
 
 // Sign performs keyless signing via cosign sign-blob: resolves an OIDC token,

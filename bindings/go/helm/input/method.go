@@ -10,6 +10,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/constructor"
 	constructorruntime "ocm.software/open-component-model/bindings/go/constructor/runtime"
 	helminternal "ocm.software/open-component-model/bindings/go/helm/internal"
+	helmcredentials "ocm.software/open-component-model/bindings/go/helm/spec/credentials"
 	credsv1 "ocm.software/open-component-model/bindings/go/helm/spec/credentials/v1"
 	"ocm.software/open-component-model/bindings/go/helm/spec/input"
 	"ocm.software/open-component-model/bindings/go/helm/spec/input/v1"
@@ -44,6 +45,10 @@ const LegacyHelmChartConsumerType = "HelmChartRepository"
 
 func (i *InputMethod) GetInputMethodScheme() *runtime.Scheme {
 	return input.Scheme
+}
+
+func (i *InputMethod) GetCredentialTypeScheme() *runtime.Scheme {
+	return helmcredentials.Scheme
 }
 
 // GetResourceCredentialConsumerIdentity returns credentials consumer identity for remote helm repositories

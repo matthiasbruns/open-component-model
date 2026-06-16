@@ -16,6 +16,7 @@ import (
 	"time"
 
 	genericv1 "ocm.software/open-component-model/bindings/go/configuration/generic/v1/spec"
+	"ocm.software/open-component-model/bindings/go/credentials"
 	blobtransformerv1 "ocm.software/open-component-model/bindings/go/plugin/manager/contracts/blobtransformer/v1"
 	componentlisterv1 "ocm.software/open-component-model/bindings/go/plugin/manager/contracts/componentlister/v1"
 	credentialrepositoryv1 "ocm.software/open-component-model/bindings/go/plugin/manager/contracts/credentials/v1"
@@ -29,6 +30,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/componentversionrepository"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialplugin"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialrepository"
+	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialtype"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/digestprocessor"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/input"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource"
@@ -50,6 +52,7 @@ type PluginManager struct {
 	ComponentListerRegistry            *componentlister.ComponentListerRegistry
 	CredentialPluginRegistry           *credentialplugin.Registry
 	CredentialRepositoryRegistry       *credentialrepository.RepositoryRegistry
+	CredentialTypeRegistry             *credentialtype.Registry
 	InputRegistry                      *input.RepositoryRegistry
 	DigestProcessorRegistry            *digestprocessor.RepositoryRegistry
 	ResourcePluginRegistry             *resource.ResourceRegistry
@@ -73,6 +76,7 @@ func NewPluginManager(ctx context.Context) *PluginManager {
 		ComponentListerRegistry:            componentlister.NewComponentListerRegistry(ctx),
 		CredentialPluginRegistry:           credentialplugin.NewRegistry(ctx),
 		CredentialRepositoryRegistry:       credentialrepository.NewCredentialRepositoryRegistry(ctx),
+		CredentialTypeRegistry:             credentialtype.NewRegistry(),
 		InputRegistry:                      input.NewInputRepositoryRegistry(ctx),
 		DigestProcessorRegistry:            digestprocessor.NewDigestProcessorRegistry(ctx),
 		ResourcePluginRegistry:             resource.NewResourceRegistry(ctx),
@@ -80,6 +84,57 @@ func NewPluginManager(ctx context.Context) *PluginManager {
 		SigningRegistry:                    signinghandler.NewSigningRegistry(ctx),
 		baseCtx:                            ctx,
 	}
+}
+
+// RegisterInternalCredentialRepositoryPlugin registers a builtin credential repository plugin and
+// automatically merges any credential types it declares into CredentialTypeRegistry.
+func (pm *PluginManager) RegisterInternalCredentialRepositoryPlugin(
+	plugin credentialrepository.BuiltinCredentialRepositoryPlugin,
+	consumerTypes []runtime.Type,
+) error {
+	if err := pm.CredentialRepositoryRegistry.RegisterInternalCredentialRepositoryPlugin(plugin, consumerTypes); err != nil {
+		return err
+	}
+	if p, ok := plugin.(credentials.CredentialTypeSchemeProvider); ok {
+		pm.CredentialTypeRegistry.Register(p.GetCredentialTypeScheme())
+	}
+	return nil
+}
+
+// RegisterInternalCredentialPlugin registers a builtin credential plugin and
+// automatically merges any credential types it declares into CredentialTypeRegistry.
+func (pm *PluginManager) RegisterInternalCredentialPlugin(plugin credentialplugin.BuiltinCredentialPlugin) error {
+	if err := pm.CredentialPluginRegistry.RegisterInternalCredentialPlugin(plugin); err != nil {
+		return err
+	}
+	if p, ok := plugin.(credentials.CredentialTypeSchemeProvider); ok {
+		pm.CredentialTypeRegistry.Register(p.GetCredentialTypeScheme())
+	}
+	return nil
+}
+
+// RegisterInternalSigningHandler registers a builtin signing handler and
+// automatically merges any credential types it declares into CredentialTypeRegistry.
+func (pm *PluginManager) RegisterInternalSigningHandler(plugin signinghandler.BuiltinSigningHandler) error {
+	if err := pm.SigningRegistry.RegisterInternalComponentSignatureHandler(plugin); err != nil {
+		return err
+	}
+	if p, ok := plugin.(credentials.CredentialTypeSchemeProvider); ok {
+		pm.CredentialTypeRegistry.Register(p.GetCredentialTypeScheme())
+	}
+	return nil
+}
+
+// RegisterInternalResourceInputPlugin registers a builtin resource input plugin and
+// automatically merges any credential types it declares into CredentialTypeRegistry.
+func (pm *PluginManager) RegisterInternalResourceInputPlugin(plugin input.BuiltinResourceInputMethod) error {
+	if err := pm.InputRegistry.RegisterInternalResourceInputPlugin(plugin); err != nil {
+		return err
+	}
+	if p, ok := plugin.(credentials.CredentialTypeSchemeProvider); ok {
+		pm.CredentialTypeRegistry.Register(p.GetCredentialTypeScheme())
+	}
+	return nil
 }
 
 type RegistrationOptions struct {
@@ -310,6 +365,9 @@ func (pm *PluginManager) addPlugin(ctx context.Context, ocmConfig *genericv1.Con
 			slog.DebugContext(ctx, "adding credential repository plugin", "id", plugin.ID)
 			if err := pm.CredentialRepositoryRegistry.AddPlugin(plugin, capability); err != nil {
 				return fmt.Errorf("failed to register plugin %s: %w", plugin.ID, err)
+			}
+			if err := pm.CredentialTypeRegistry.RegisterCustomTypes(capability.CustomCredentialTypes); err != nil {
+				return fmt.Errorf("failed to register credential types for plugin %s: %w", plugin.ID, err)
 			}
 		case *componentlisterv1.CapabilitySpec:
 			slog.DebugContext(ctx, "adding component lister plugin", "id", plugin.ID)
