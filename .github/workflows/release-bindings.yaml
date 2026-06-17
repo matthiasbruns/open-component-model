@@ -1,0 +1,117 @@
+name: Release Bindings
+
+# Releases all Go binding modules in topological dependency order.
+# Each module gets a signed semver tag; modules whose internal deps were
+# updated in the same run have their go.mod pinned before tagging, so the
+# tagged commit always has a self-consistent dependency graph.
+#
+# Can be triggered manually (workflow_dispatch) for a standalone binding
+# release, or called from release.yml as a pre-step before the CLI /
+# controller release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type applied to every binding module"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      dry_run:
+        description: "Print the release plan without pushing commits or tags"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      bump:
+        description: "Version bump type (patch, minor, major)"
+        type: string
+        default: patch
+      dry_run:
+        description: "Dry-run — no pushes"
+        type: boolean
+        default: false
+    outputs:
+      tags_json:
+        description: "JSON object mapping binding module paths to their new tags"
+        value: ${{ jobs.release.outputs.tags_json }}
+
+permissions:
+  contents: read
+
+concurrency:
+  cancel-in-progress: false
+  group: release-bindings
+
+jobs:
+  release:
+    name: Release Binding Modules
+    runs-on: ubuntu-24.04-arm
+    environment:
+      name: go-modules
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      tags_json: ${{ steps.release.outputs.tags_json }}
+    steps:
+      - name: Generate App Token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.OCMBOT_APP_ID }}
+          private-key: ${{ secrets.OCMBOT_PRIV_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ steps.token.outputs.token }}
+          # persist-credentials kept intentionally — git push in the release
+          # script authenticates via the GITHUB_TOKEN env var passed through
+          # http.extraHeader, matching the pattern used by create-tag.js.
+          # Zizmor flags this; accepted.
+
+      - name: Setup git identity
+        env:
+          GIT_USER: ${{ github.actor }}
+        run: |
+          git config --global user.name "$GIT_USER"
+          git config --global user.email "$GIT_USER@users.noreply.github.com"
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY_FOR_SIGNING }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          git_user_signingkey: true
+          git_tag_gpgsign: true
+          git_commit_gpgsign: true
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: bindings/go/runtime/go.mod
+          cache: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24'
+
+      - name: Install script dependencies
+        working-directory: .github/scripts
+        run: npm ci
+
+      - name: Release bindings
+        id: release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          BUMP: ${{ inputs.bump || 'patch' }}
+          DRY_RUN: ${{ inputs.dry_run == true && 'true' || 'false' }}
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+        with:
+          script: |
+            const script = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
+            await script.default({ core });
