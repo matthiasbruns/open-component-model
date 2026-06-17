@@ -1,12 +1,11 @@
 // @ts-check
-// Orchestrates the release of all Go binding modules in topological dependency
-// order. For each module the script:
-//   1. Pre-computes the next semver tag
-//   2. Pins newly-released internal deps via `go mod edit -require`
-//   3. Runs `go mod tidy` (workspace-aware, no proxy needed for internal deps)
-//   4. Commits all go.mod / go.sum / go.work.sum changes in one release-prep commit
-//   5. Creates a signed tag for every module — all pointing at the same commit
-//   6. Pushes the commit + all tags
+// Binding release orchestration — one file, named exports per workflow step.
+//
+// Workflow calls each export in sequence:
+//   buildGraph   → discover modules, topo-sort, output ordered_json
+//   planRelease  → compute next semver tag per module, output tags_json
+//   pinDeps      → go mod edit -require + go mod tidy for changed modules
+//   publish      → signed git tags + push + step summary
 
 import { execFileSync } from 'child_process';
 import { readFileSync } from 'fs';
@@ -14,38 +13,38 @@ import { join } from 'path';
 
 const OCM_PREFIX = 'ocm.software/open-component-model/';
 
-// --------------------------
-// Default git / Go executors
-// --------------------------
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
 
-/** @param {string[]} args @param {import('child_process').ExecFileSyncOptions} [opts] */
-function defaultGit(args, opts = {}) {
+/** @param {string[]} args */
+function git(args) {
   const token = process.env.GITHUB_TOKEN;
-  const authArgs = token
+  const auth  = token
     ? ['-c', `http.extraHeader=Authorization: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`]
     : [];
-  return /** @type {string} */ (execFileSync('git', [...authArgs, ...args], { encoding: 'utf-8', stdio: 'pipe', ...opts })).trim();
+  return /** @type {string} */ (execFileSync('git', [...auth, ...args], { encoding: 'utf-8', stdio: 'pipe' })).trim();
 }
 
 /** @param {string[]} args @param {import('child_process').ExecFileSyncOptions} [opts] */
-function defaultGo(args, opts = {}) {
-  return /** @type {string} */ (execFileSync('go', args, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'inherit'], ...opts })).trim();
+function go_(args, opts = {}) {
+  execFileSync('go', args, { stdio: 'inherit', ...opts });
 }
 
-// --------------------------
-// Module discovery
-// --------------------------
+// ---------------------------------------------------------------------------
+// Pure / injectable functions (exported for testing)
+// ---------------------------------------------------------------------------
 
 /**
- * Parse go.work and return repo-relative paths of binding modules to release.
- * Excludes integration test modules (path ends with /integration).
+ * Parse go.work and return repo-relative binding module paths.
+ * Excludes /integration test modules.
  *
  * @param {string} repoRoot
  * @param {(path: string, encoding: any) => string} [readFile]
  * @returns {string[]}
  */
 export function discoverModules(repoRoot, readFile = readFileSync) {
-  const src = /** @type {string} */ (readFile(join(repoRoot, 'go.work'), 'utf-8'));
+  const src   = /** @type {string} */ (readFile(join(repoRoot, 'go.work'), 'utf-8'));
   const block = src.match(/^use\s*\(([\s\S]*?)\)/m)?.[1] ?? '';
   return block
     .split('\n')
@@ -57,12 +56,12 @@ export function discoverModules(repoRoot, readFile = readFileSync) {
  * Return the internal binding deps of a module as repo-relative paths.
  *
  * @param {string} repoRoot
- * @param {string} modPath  e.g. "bindings/go/oci"
+ * @param {string} modPath
  * @param {(path: string, encoding: any) => string} [readFile]
  * @returns {string[]}
  */
 export function internalDepsOf(repoRoot, modPath, readFile = readFileSync) {
-  const src = /** @type {string} */ (readFile(join(repoRoot, modPath, 'go.mod'), 'utf-8'));
+  const src  = /** @type {string} */ (readFile(join(repoRoot, modPath, 'go.mod'), 'utf-8'));
   const deps = new Set();
   for (const [, name] of src.matchAll(new RegExp(`(${OCM_PREFIX}bindings/go/[^\\s]+)\\s+v`, 'g'))) {
     deps.add(name.replace(OCM_PREFIX, ''));
@@ -70,16 +69,11 @@ export function internalDepsOf(repoRoot, modPath, readFile = readFileSync) {
   return /** @type {string[]} */ ([...deps]);
 }
 
-// --------------------------
-// Topological sort (Kahn's algorithm)
-// --------------------------
-
 /**
- * Sort modules so that every dependency appears before its dependent.
- * Throws on a cycle.
+ * Topological sort (Kahn's). Deps precede their dependents. Throws on cycle.
  *
  * @param {string[]} modules
- * @param {Map<string, string[]>} depsMap  module → its direct internal deps
+ * @param {Map<string, string[]>} depsMap
  * @returns {string[]}
  */
 export function topoSort(modules, depsMap) {
@@ -110,19 +104,13 @@ export function topoSort(modules, depsMap) {
   }
 
   if (sorted.length !== modules.length) {
-    const stuck = modules.filter(m => !sorted.includes(m));
-    throw new Error(`Cycle detected in binding dependencies: ${stuck.join(', ')}`);
+    throw new Error(`Cycle detected: ${modules.filter(m => !sorted.includes(m)).join(', ')}`);
   }
   return sorted;
 }
 
-// --------------------------
-// Version computation
-// --------------------------
-
 /**
- * Bump a semver string by the given kind. Pre-release suffixes are stripped
- * before bumping — "0.4.1-alpha" bumped by patch yields "0.4.2".
+ * Bump a semver string. Pre-release suffixes are stripped before bumping.
  *
  * @param {string} version  e.g. "0.4.1" or "v0.4.1-alpha"
  * @param {'patch'|'minor'|'major'} kind
@@ -153,123 +141,155 @@ export function tagToVersion(tag) {
  * @param {(args: string[]) => string} [execGit]
  * @returns {string|null}
  */
-export function latestVersionTag(modPath, execGit = defaultGit) {
+export function latestVersionTag(modPath, execGit = git) {
   try {
-    const out = execGit(['tag', '--list', `${modPath}/v*`, '--sort=-version:refname']);
-    return out.split('\n').find(Boolean) ?? null;
+    return execGit(['tag', '--list', `${modPath}/v*`, '--sort=-version:refname']).split('\n').find(Boolean) ?? null;
   } catch {
     return null;
   }
 }
 
 /**
- * Compute the next tag for a module given the requested bump kind.
- * Returns "<modPath>/v0.0.1" when the module has no tags yet.
+ * Compute the next tag for a module. Returns "<modPath>/v0.0.1" for first release.
  *
  * @param {string} modPath
  * @param {'patch'|'minor'|'major'} bumpKind
  * @param {(args: string[]) => string} [execGit]
  * @returns {string}
  */
-export function computeNextTag(modPath, bumpKind, execGit = defaultGit) {
+export function computeNextTag(modPath, bumpKind, execGit = git) {
   const prefix = `${modPath}/v`;
   const latest = latestVersionTag(modPath, execGit);
   if (!latest) return `${prefix}0.0.1`;
   return `${prefix}${bumpSemver(latest.replace(prefix, ''), bumpKind)}`;
 }
 
-// --------------------------
-// Main entrypoint
-// --------------------------
+/**
+ * Compute which internal deps need pinning for each module being released.
+ *
+ * @param {string[]} ordered
+ * @param {Record<string, string>} tags  module path → new tag
+ * @param {(mod: string) => string[]} getDeps
+ * @returns {Map<string, Array<{name: string, version: string}>>}
+ */
+export function pinsFor(ordered, tags, getDeps) {
+  /** @type {Map<string, Array<{name: string, version: string}>>} */
+  const result = new Map();
+  for (const mod of ordered) {
+    const pins = getDeps(mod)
+      .filter(dep => dep in tags)
+      .map(dep => ({ name: `${OCM_PREFIX}${dep}`, version: tagToVersion(tags[dep]) }));
+    if (pins.length) result.set(mod, pins);
+  }
+  return result;
+}
 
-/** @param {import('@actions/github-script').AsyncFunctionArguments} args */
-export default async function releaseBindings({ core }) {
-  const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
-  const bumpKind = /** @type {'patch'|'minor'|'major'} */ (process.env.BUMP ?? 'patch');
-  const dryRun   = process.env.DRY_RUN === 'true';
+// ---------------------------------------------------------------------------
+// Workflow step entrypoints
+// ---------------------------------------------------------------------------
 
-  // 1. Discover modules and build internal dependency graph
+/**
+ * Step 1 — Discover modules, topo-sort, output ordered_json.
+ *
+ * @param {import('@actions/github-script').AsyncFunctionArguments} args
+ */
+export async function buildGraph({ core }) {
+  const repoRoot  = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const modules   = discoverModules(repoRoot);
   const moduleSet = new Set(modules);
-  const depsMap   = new Map(
-    modules.map(m => [m, internalDepsOf(repoRoot, m).filter(d => moduleSet.has(d))])
-  );
-  const sorted = topoSort(modules, depsMap);
+  const depsMap   = new Map(modules.map(m => [m, internalDepsOf(repoRoot, m).filter(d => moduleSet.has(d))]));
+  const ordered   = topoSort(modules, depsMap);
 
-  core.info(`Releasing ${sorted.length} binding modules in dependency order:`);
-  for (const m of sorted) {
+  core.info(`Discovered ${ordered.length} binding modules in release order:`);
+  for (const m of ordered) {
     const deps = depsMap.get(m) ?? [];
-    core.info(`  ${m}${deps.length ? ` (needs: ${deps.join(', ')})` : ''}`);
+    core.info(`  ${m}${deps.length ? ` ← ${deps.join(', ')}` : ''}`);
   }
 
-  // 2. Pre-compute all new tags so downstream modules can reference them
-  const newTags = new Map(sorted.map(m => [m, computeNextTag(m, bumpKind)]));
+  core.setOutput('ordered_json', JSON.stringify(ordered));
+}
 
-  // 3. Pin newly-released internal deps in each module's go.mod, then tidy
-  const modifiedMods = new Set();
-  for (const mod of sorted) {
-    const toPin = (depsMap.get(mod) ?? []).filter(d => newTags.has(d));
-    if (!toPin.length) continue;
+/**
+ * Step 2 — Compute the next semver tag for every module, output tags_json.
+ * Reads ORDERED_JSON and BUMP from the environment.
+ *
+ * @param {import('@actions/github-script').AsyncFunctionArguments} args
+ */
+export async function planRelease({ core }) {
+  const ordered  = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+  const bumpKind = /** @type {'patch'|'minor'|'major'} */ (process.env.BUMP ?? 'patch');
 
-    const modDir = join(repoRoot, mod);
+  /** @type {Record<string, string>} */
+  const tags = {};
+  core.info('Planned tags:');
+  for (const mod of ordered) {
+    tags[mod] = computeNextTag(mod, bumpKind);
+    core.info(`  ${mod} → ${tags[mod]}`);
+  }
+
+  core.setOutput('tags_json', JSON.stringify(tags));
+}
+
+/**
+ * Step 3 — Pin newly-released internal deps in each module's go.mod, then tidy.
+ * Reads ORDERED_JSON and TAGS_JSON from the environment.
+ *
+ * @param {import('@actions/github-script').AsyncFunctionArguments} args
+ */
+export async function pinDeps({ core }) {
+  const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const ordered  = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+  const tags     = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
+
+  const getDeps  = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
+  const pinMap   = pinsFor(ordered, tags, getDeps);
+
+  for (const [mod, pins] of pinMap) {
     core.info(`\nPinning deps in ${mod}:`);
-    for (const dep of toPin) {
-      const version = tagToVersion(newTags.get(dep) ?? '');
-      const name    = `${OCM_PREFIX}${dep}`;
+    const modDir = join(repoRoot, mod);
+    for (const { name, version } of pins) {
       core.info(`  ${name}@${version}`);
-      defaultGo(['mod', 'edit', `-require=${name}@${version}`], { cwd: modDir });
+      go_(['mod', 'edit', `-require=${name}@${version}`], { cwd: modDir });
     }
-    defaultGo(['mod', 'tidy'], { cwd: modDir });
-    modifiedMods.add(mod);
+    go_(['mod', 'tidy'], { cwd: modDir });
   }
 
-  // 4. Commit all go.mod / go.sum / go.work.sum changes in one release-prep commit
-  const dirty = defaultGit(['status', '--porcelain']);
-  if (dirty) {
-    const toStage = ['go.work.sum'];
-    for (const mod of modifiedMods) {
-      toStage.push(`${mod}/go.mod`, `${mod}/go.sum`);
-    }
-    if (dryRun) {
-      core.info(`\n[dry-run] would stage and commit:\n  ${toStage.join('\n  ')}`);
-    } else {
-      defaultGit(['add', '--', ...toStage]);
-      defaultGit(['commit', '-S', '-s', '-m', 'chore(release): pin binding go.mod deps for release']);
-      core.info('\nCommitted go.mod dependency pins');
-    }
-  }
+  core.info(`\nPinned deps in ${pinMap.size} module(s)`);
+}
 
-  // 5. Create a signed tag for every module — all point at the same post-commit HEAD
-  core.info('\nCreating tags:');
-  for (const [, tag] of newTags) {
+/**
+ * Step 4 — Create signed git tags and push everything.
+ * Reads TAGS_JSON and DRY_RUN from the environment.
+ *
+ * @param {import('@actions/github-script').AsyncFunctionArguments} args
+ */
+export async function publish({ core }) {
+  const tags   = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
+  const dryRun = process.env.DRY_RUN === 'true';
+  const entries = Object.entries(tags);
+
+  core.info('Creating tags:');
+  for (const [, tag] of entries) {
     if (dryRun) {
       core.info(`  [dry-run] ${tag}`);
     } else {
-      defaultGit(['tag', '-s', '-m', `Release ${tag}`, tag]);
+      git(['tag', '-s', '-m', `Release ${tag}`, tag]);
       core.info(`  ${tag}`);
     }
   }
 
-  // 6. Push commit + all tags in one operation
   if (!dryRun) {
-    defaultGit(['push', 'origin', 'HEAD']);
-    defaultGit(['push', 'origin', ...[...newTags.values()].map(t => `refs/tags/${t}`)]);
-    core.info(`\nPushed ${newTags.size} tags`);
+    git(['push', 'origin', 'HEAD']);
+    git(['push', 'origin', ...entries.map(([, t]) => `refs/tags/${t}`)]);
+    core.info(`\nPushed ${entries.length} tags`);
   }
 
-  // Summary
-  const table = [
-    [{ data: 'Module', header: true }, { data: 'New Tag', header: true }, { data: 'Deps Updated', header: true }],
-    ...sorted.map(m => [
-      m,
-      newTags.get(m) ?? '',
-      (depsMap.get(m) ?? []).filter(d => newTags.has(d)).map(d => tagToVersion(newTags.get(d) ?? '')).join(', ') || '—',
-    ]),
-  ];
+  const heading = dryRun ? '🔍 Binding Release Plan (dry-run)' : '✅ Binding Release Complete';
+  const rows    = entries.map(([mod, tag]) => `| \`${mod}\` | \`${tag}\` |`).join('\n');
   await core.summary
-    .addHeading(dryRun ? '🔍 Dry-run: Binding Release Plan' : '✅ Binding Release Complete')
-    .addTable(table)
+    .addHeading(heading)
+    .addRaw(`| Module | Tag |\n| :--- | :--- |\n${rows}\n`)
     .write();
 
-  core.setOutput('tags_json', JSON.stringify(Object.fromEntries(newTags)));
+  core.setOutput('tags_json', JSON.stringify(tags));
 }
