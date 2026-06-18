@@ -30,7 +30,7 @@ permissions:
 jobs:
   unit:
     name: "Unit / ${{ matrix.module }}"
-    if: ${{ fromJSON(inputs.unit_modules_json)[0] != null }}
+    if: ${{ inputs.unit_modules_json != '[]' }}
     runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
@@ -71,7 +71,7 @@ jobs:
 
   integration:
     name: "Integration / ${{ matrix.module }}"
-    if: ${{ fromJSON(inputs.integration_modules_json)[0] != null }}
+    if: ${{ inputs.integration_modules_json != '[]' }}
     # Runner override — sigstore integration tests require x86 for tooling compatibility.
     runs-on: ${{ fromJSON('{"bindings/go/sigstore/integration":"ubuntu-latest"}')[matrix.module] || 'ubuntu-24.04-arm' }}
     strategy:
