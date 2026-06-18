@@ -8,7 +8,7 @@
 //   publish      → signed git tags + push + step summary
 
 import {execFileSync} from 'child_process';
-import {existsSync} from 'fs';
+import {existsSync, writeFileSync} from 'fs';
 import {join} from 'path';
 import {tagPrefix, latestTag, bumpVersion} from './submodule-version.js'; // eslint-disable-line -- tagPrefix used in computeNextTag below
 
@@ -328,15 +328,20 @@ export async function planRelease({core}) {
     const date       = new Date(Number(tsRaw) * 1000).toISOString().replace(/[^0-9]/g, '').slice(0, 14);
     const pseudoVer  = `v0.0.0-${date}-${headCommit.slice(0, 12)}`;
 
+    // Write changelogs to a file for artifact upload — too large to pass as a job output.
+    const artifactDir = process.env.RUNNER_TEMP ?? '/tmp';
+    writeFileSync(join(artifactDir, 'changelogs.json'), JSON.stringify(changelogs, null, 2));
+    core.info(`Changelogs written to ${artifactDir}/changelogs.json`);
+
     core.setOutput('tags_json',                JSON.stringify(tags));
     core.setOutput('from_tags_json',           JSON.stringify(fromTags));
     core.setOutput('bump_kinds_json',          JSON.stringify(bumpKinds));
-    core.setOutput('changelogs_json',          JSON.stringify(changelogs));
     core.setOutput('changed_modules_json',     JSON.stringify(changed));
     core.setOutput('skipped_modules_json',     JSON.stringify(skipped));
     core.setOutput('integration_modules_json', JSON.stringify(integrationModules));
     core.setOutput('head_commit',              headCommit);
     core.setOutput('pseudo_version',           pseudoVer);
+    core.setOutput('artifact_dir',             artifactDir);
 }
 
 /**
