@@ -46,8 +46,6 @@ jobs:
       fail-fast: false
       matrix:
         arch: [arm64]
-    env:
-      GOWORK: 'off'
     permissions:
       contents: read
       actions: read
@@ -64,10 +62,12 @@ jobs:
           ref: ${{ env.REF }}
           sparse-checkout: |
             ${{ env.LOCATION }}
+            bindings/
             Taskfile.yml
             .env
             website/static/install.sh
             go.work
+            go.work.sum
           persist-credentials: false
 
       - name: Setup Go
