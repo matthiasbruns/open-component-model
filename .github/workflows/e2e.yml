@@ -46,6 +46,8 @@ jobs:
       fail-fast: false
       matrix:
         arch: [arm64]
+    env:
+      GOWORK: 'off'
     permissions:
       contents: read
       actions: read
