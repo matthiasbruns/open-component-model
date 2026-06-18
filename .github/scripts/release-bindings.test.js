@@ -2,7 +2,7 @@ import assert from 'assert';
 import {
   discoverModules, internalDepsOf, topoSort,
   bumpSemver, tagToVersion, latestVersionTag, computeNextTag, pseudoVersion,
-  detectBump, pinsFor,
+  hasChanges, detectBump, pinsFor,
 } from './release-bindings.js';
 
 const mockReadFile = (/** @type {Record<string, string>} */ files) =>
@@ -139,6 +139,30 @@ assert.strictEqual(computeNextTag('bindings/go/oci', 'major', mockGit('bindings/
 assert.strictEqual(computeNextTag('bindings/go/ctf', 'patch', mockGit('bindings/go/ctf/v0.4.1\nbindings/go/ctf/v0.4.0')), 'bindings/go/ctf/v0.4.2');
 // Previously pseudo-versioned → next release bumps to v0.0.1
 assert.strictEqual(computeNextTag('bindings/go/cel', 'patch', mockGit('bindings/go/cel/v0.0.0-20260101000000-abc123def456')), 'bindings/go/cel/v0.0.1');
+
+// ----------------------------------------------------------
+// hasChanges
+// ----------------------------------------------------------
+console.log('Testing hasChanges...');
+
+// No last tag → always true (first release)
+assert.strictEqual(hasChanges('bindings/go/cel', null, () => ''), true);
+
+// Empty git log → no changes
+assert.strictEqual(hasChanges('bindings/go/oci', 'bindings/go/oci/v0.0.46',
+  args => args.includes('--oneline') ? '' : ''), false);
+
+// Non-empty git log → has changes
+assert.strictEqual(hasChanges('bindings/go/oci', 'bindings/go/oci/v0.0.46',
+  args => args.includes('--oneline') ? 'abc1234 fix: something' : ''), true);
+
+// Whitespace-only output → treated as no changes
+assert.strictEqual(hasChanges('bindings/go/oci', 'bindings/go/oci/v0.0.46',
+  args => args.includes('--oneline') ? '   \n  ' : ''), false);
+
+// git error → safe default: treat as changed (don't skip on failure)
+assert.strictEqual(hasChanges('bindings/go/oci', 'bindings/go/oci/v0.0.46',
+  () => { throw new Error('git failed'); }), true);
 
 // ----------------------------------------------------------
 // detectBump

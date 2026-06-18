@@ -167,6 +167,24 @@ export function pseudoVersion(execGit = git) {
 }
 
 /**
+ * Return true if a module has any commits touching its path since its last tag.
+ * Always returns true for modules with no previous tag (first release).
+ *
+ * @param {string} modPath
+ * @param {string|null} lastTag
+ * @param {(args: string[]) => string} [execGit]
+ * @returns {boolean}
+ */
+export function hasChanges(modPath, lastTag, execGit = git) {
+  if (!lastTag) return true;
+  try {
+    return execGit(['log', `${lastTag}..HEAD`, '--oneline', '--', modPath]).trim() !== '';
+  } catch {
+    return true; // safe default
+  }
+}
+
+/**
  * Scan git log for a module since its last tag for breaking change markers
  * (Conventional Commits: `type!:` subject or `BREAKING CHANGE:` footer).
  * Returns 'minor' if any are found, 'patch' otherwise.
@@ -258,26 +276,34 @@ export async function buildGraph({ core }) {
  * @param {import('@actions/github-script').AsyncFunctionArguments} args
  */
 export async function planRelease({ core }) {
-  const ordered    = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
-  const bumpFloor  = /** @type {'patch'|'minor'|'major'} */ (process.env.BUMP ?? 'patch');
+  const ordered   = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+  const bumpFloor = /** @type {'patch'|'minor'|'major'} */ (process.env.BUMP ?? 'patch');
 
   /** @type {Record<string, string>} */
   const tags = {};
+  const skipped = [];
+
   core.info('Planned tags:');
   for (const mod of ordered) {
-    // When BUMP=patch (the default), auto-detect per module from git log.
+    const latestTag = latestVersionTag(mod);
+
+    // Skip modules with no changes since their last release.
+    if (!hasChanges(mod, latestTag)) {
+      core.info(`  ${mod} → (unchanged since ${latestTag ?? 'untagged'}, skipping)`);
+      skipped.push(mod);
+      continue;
+    }
+
+    // When BUMP=patch (default), auto-detect per module from git log.
     // When BUMP=minor or major, that explicit choice is always honoured.
     let bump = bumpFloor;
-    if (bumpFloor === 'patch') {
-      const latest  = latestVersionTag(mod);
-      const detected = detectBump(mod, latest);
-      if (detected === 'minor') bump = 'minor';
-    }
+    if (bumpFloor === 'patch' && detectBump(mod, latestTag) === 'minor') bump = 'minor';
 
     tags[mod] = computeNextTag(mod, bump);
     core.info(`  ${mod} → ${tags[mod]}${bump === 'minor' ? '  ⚠ breaking change' : ''}`);
   }
 
+  if (skipped.length) core.info(`\nSkipped ${skipped.length} unchanged module(s)`);
   core.setOutput('tags_json', JSON.stringify(tags));
 }
 
