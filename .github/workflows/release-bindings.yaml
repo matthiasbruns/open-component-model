@@ -134,7 +134,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: '${{ github.workspace }}/${{ matrix.module }}/go.mod'
+          go-version-file: go.work
           cache-dependency-path: |
             ${{ github.workspace }}/${{ matrix.module }}/go.sum
             ${{ github.workspace }}/go.work.sum
@@ -174,7 +174,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: '${{ github.workspace }}/${{ matrix.module }}/go.mod'
+          go-version-file: go.work
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
       - name: Create Docker network for Testcontainers
