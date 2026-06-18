@@ -298,13 +298,78 @@ jobs:
           working-directory: ${{ github.workspace }}/${{ matrix.module }}
           args: --timeout 10m --config=${{ github.workspace }}/golangci.yml
 
-  test:
-    name: "Tests"
+  run_integration_tests:
+    name: "Integration Tests"
     needs: discover_modules
-    uses: ./.github/workflows/test-bindings.yaml
-    with:
-      unit_modules_json:        ${{ needs.discover_modules.outputs.unit_test_modules_json }}
-      integration_modules_json: ${{ needs.discover_modules.outputs.integration_test_modules_json }}
+    # Runner override map — add entries to run specific modules on a different runner.
+    # Modules not listed here use the default: ubuntu-24.04-arm.
+    # Example: '{"some/module/integration":"ubuntu-latest","other":"ubuntu-22.04"}'
+    runs-on: ${{ fromJSON('{"bindings/go/sigstore/integration":"ubuntu-latest"}')[matrix.module] || 'ubuntu-24.04-arm' }}
+    if: ${{ fromJSON(needs.discover_modules.outputs.integration_test_modules_json)[0] != null }} # skip if no modules are found
+    strategy:
+      matrix:
+        module: ${{ fromJSON(needs.discover_modules.outputs.integration_test_modules_json) }}
+    env:
+      TESTCONTAINER_DOCKER_NETWORK: integration-testcontainers
+    steps:
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
+      - name: Create Docker network for running Testcontainers
+        run: docker network create ${{ env.TESTCONTAINER_DOCKER_NETWORK }}
+      - name: Run Tests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USER: ${{ github.actor }}
+          MODULE: ${{ matrix.module }}
+        run: task "${MODULE}:test/integration"
+
+  run_unit_tests:
+    name: "Unit Tests"
+    needs: discover_modules
+    runs-on: ubuntu-24.04-arm
+    if: ${{ fromJSON(needs.discover_modules.outputs.unit_test_modules_json)[0] != null }} # skip if no modules are found
+    strategy:
+      matrix:
+        module: ${{ fromJSON(needs.discover_modules.outputs.unit_test_modules_json) }}
+    steps:
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          sparse-checkout: |
+            bindings/
+            cli/
+            kubernetes/controller/
+            conformance/scenarios/sovereign/components/notes/
+            go.work
+            go.work.sum
+            reuse.Taskfile.yml
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            ${{ github.workspace }}/${{ matrix.module }}/go.sum
+            ${{ github.workspace }}/go.work.sum
+      - name: Run Tests
+        env:
+          MODULE: ${{ matrix.module }}
+        run: task "${MODULE}:test"
 
   generate:
     runs-on: ubuntu-24.04-arm
@@ -346,7 +411,8 @@ jobs:
     needs:
       - discover_modules
       - generate
-      - test
+      - run_unit_tests
+      - run_integration_tests
       - golangci_lint
     if: ${{ failure() }}
     steps:
