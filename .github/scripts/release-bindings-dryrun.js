@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @ts-check
+// @ts-nocheck — mock core intentionally omits unused @actions/core members
 // Local dry-run runner for the binding release workflow.
 // Calls all four step functions with DRY_RUN=true — no git tags, no pushes,
 // no go.mod modifications. Safe to run at any time.
