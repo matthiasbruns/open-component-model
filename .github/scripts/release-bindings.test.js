@@ -5,12 +5,6 @@ import {
   hasChanges, detectBump, pinsFor,
 } from './release-bindings.js';
 
-const mockReadFile = (/** @type {Record<string, string>} */ files) =>
-  (/** @type {string} */ p) => {
-    if (p in files) return files[p];
-    throw new Error(`Unexpected path: ${p}`);
-  };
-
 /**
  * @param {string} tagOutput   returned for `git tag --list`
  * @param {string} [headHash]  returned for `git rev-parse HEAD`
@@ -47,17 +41,17 @@ console.log('Testing discoverModules...');
 console.log('Testing internalDepsOf...');
 
 {
-  const goMod = 'module ocm.software/open-component-model/bindings/go/oci\n\nrequire (\n\tocm.software/open-component-model/bindings/go/repository v0.0.9\n\tocm.software/open-component-model/bindings/go/runtime v0.0.8\n\tgithub.com/external v1.0.0\n)\n';
-  const deps  = internalDepsOf('/r', 'bindings/go/oci', mockReadFile({ '/r/bindings/go/oci/go.mod': goMod }));
-  assert.ok(deps.includes('bindings/go/repository'));
-  assert.ok(deps.includes('bindings/go/runtime'));
-  assert.ok(!deps.some(d => d.startsWith('github.com')), 'no external deps');
-}
-{
-  // Deduplication
-  const goMod = 'module m\n\nrequire (\n\tocm.software/open-component-model/bindings/go/runtime v0.0.8\n\tocm.software/open-component-model/bindings/go/runtime v0.0.8 // indirect\n)\n';
-  const deps  = internalDepsOf('/r', 'x', mockReadFile({ '/r/x/go.mod': goMod }));
-  assert.strictEqual(deps.filter(d => d === 'bindings/go/runtime').length, 1);
+  const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+
+  // oci has several known binding deps
+  const ociDeps = internalDepsOf(repoRoot, 'bindings/go/oci');
+  assert.ok(ociDeps.includes('bindings/go/repository'), 'oci depends on repository');
+  assert.ok(ociDeps.includes('bindings/go/runtime'),    'oci depends on runtime');
+  assert.ok(!ociDeps.some(d => d.startsWith('github.com')), 'no external deps returned');
+
+  // runtime is a leaf — it has no binding deps
+  const runtimeDeps = internalDepsOf(repoRoot, 'bindings/go/runtime');
+  assert.deepStrictEqual(runtimeDeps, [], 'runtime has no internal binding deps');
 }
 
 // ----------------------------------------------------------
