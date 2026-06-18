@@ -314,13 +314,17 @@ export async function planRelease({ core }) {
  * @param {import('@actions/github-script').AsyncFunctionArguments} args
  */
 export async function pinDeps({ core }) {
-  const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
-  const ordered  = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
-  const tags     = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
-  const dryRun   = process.env.DRY_RUN === 'true';
+  const repoRoot  = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const ordered   = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+  const consumers = /** @type {string[]} */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
+  const tags      = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
+  const dryRun    = process.env.DRY_RUN === 'true';
 
-  const getDeps  = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
-  const pinMap   = pinsFor(ordered, tags, getDeps);
+  // Process bindings first (in topo order), then consumers (cli, controller).
+  // pinsFor filters by dep in tags, so consumers only get pinned for
+  // bindings that were actually released in this run.
+  const getDeps = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
+  const pinMap  = pinsFor([...ordered, ...consumers], tags, getDeps);
 
   for (const [mod, pins] of pinMap) {
     core.info(`\nPinning deps in ${mod}:`);
