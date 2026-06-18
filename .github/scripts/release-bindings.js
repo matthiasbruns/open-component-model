@@ -82,41 +82,50 @@ export function internalDepsOf(repoRoot, modPath) {
 }
 
 /**
- * Topological sort (Kahn's). Deps precede their dependents. Throws on cycle.
+ * Topological sort (Kahn's algorithm). Deps precede their dependents.
+ * Throws if a cycle is detected.
  *
  * @param {string[]} modules
- * @param {Map<string, string[]>} depsMap
+ * @param {Map<string, string[]>} depsMap  module → its direct internal deps
  * @returns {string[]}
  */
 export function topoSort(modules, depsMap) {
+    // How many unprocessed deps each module is still waiting on.
     /** @type {Map<string, number>} */
-    const inDeg = new Map(modules.map(m => [m, 0]));
-    /** @type {Map<string, string[]>} */
-    const adj = new Map(modules.map(m => [m, []]));
+    const pendingDepsCount = new Map(modules.map(module => [module, 0]));
 
-    for (const [mod, deps] of depsMap) {
-        for (const d of deps) {
-            if (!inDeg.has(d)) continue;
-            inDeg.set(mod, (inDeg.get(mod) ?? 0) + 1);
-            adj.get(d)?.push(mod);
+    // For each module: which other modules depend on it (need it released first).
+    /** @type {Map<string, string[]>} */
+    const dependents = new Map(modules.map(module => [module, []]));
+
+    for (const [module, deps] of depsMap) {
+        for (const dep of deps) {
+            if (!pendingDepsCount.has(dep)) continue; // dep not in our release set
+            pendingDepsCount.set(module, (pendingDepsCount.get(module) ?? 0) + 1);
+            dependents.get(dep)?.push(module);
         }
     }
 
-    const queue = modules.filter(m => inDeg.get(m) === 0);
+    // Start with modules that have no deps to wait on.
+    const ready = modules.filter(module => pendingDepsCount.get(module) === 0);
     /** @type {string[]} */
     const sorted = [];
-    while (queue.length) {
-        const n = queue.shift() ?? '';
-        sorted.push(n);
-        for (const dep of (adj.get(n) ?? [])) {
-            const deg = (inDeg.get(dep) ?? 0) - 1;
-            inDeg.set(dep, deg);
-            if (deg === 0) queue.push(dep);
+
+    while (ready.length) {
+        const released = ready.shift() ?? '';
+        sorted.push(released);
+
+        // Each module that was waiting on this one has one fewer pending dep.
+        for (const dependent of (dependents.get(released) ?? [])) {
+            const remaining = (pendingDepsCount.get(dependent) ?? 0) - 1;
+            pendingDepsCount.set(dependent, remaining);
+            if (remaining === 0) ready.push(dependent);
         }
     }
 
     if (sorted.length !== modules.length) {
-        throw new Error(`Cycle detected: ${modules.filter(m => !sorted.includes(m)).join(', ')}`);
+        const stuck = modules.filter(module => !sorted.includes(module));
+        throw new Error(`Cycle detected: ${stuck.join(', ')}`);
     }
     return sorted;
 }
