@@ -100,99 +100,22 @@ jobs:
             await planRelease({ core });
 
   # ---------------------------------------------------------------------------
-  # 2a. Unit tests — one job per changed binding module, same setup as ci.yml
+  # 2. Tests — reuses test-bindings.yaml (same workflow as CI uses on PRs)
   # ---------------------------------------------------------------------------
-  test_unit:
-    name: "Unit Tests / ${{ matrix.module }}"
+  test:
+    name: "Tests"
     needs: [plan]
-    if: ${{ fromJSON(needs.plan.outputs.changed_modules_json)[0] != null }}
-    runs-on: ubuntu-24.04-arm
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ${{ fromJSON(needs.plan.outputs.changed_modules_json) }}
-    steps:
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          sparse-checkout: |
-            bindings/
-            cli/
-            kubernetes/controller/
-            conformance/scenarios/sovereign/components/notes/
-            go.work
-            go.work.sum
-            reuse.Taskfile.yml
-          persist-credentials: false
-
-      - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: |
-            ${{ github.workspace }}/${{ matrix.module }}/go.sum
-            ${{ github.workspace }}/go.work.sum
-
-      - name: Run unit tests
-        env:
-          MODULE: ${{ matrix.module }}
-        run: task "${MODULE}:test"
-
-  # ---------------------------------------------------------------------------
-  # 2b. Integration tests — for each changed module that has an integration/
-  #     sub-module. Full checkout + Docker network, mirrors ci.yml exactly.
-  # ---------------------------------------------------------------------------
-  test_integration:
-    name: "Integration Tests / ${{ matrix.module }}"
-    needs: [plan]
-    if: ${{ fromJSON(needs.plan.outputs.integration_modules_json)[0] != null }}
-    runs-on: ${{ fromJSON('{"bindings/go/sigstore/integration":"ubuntu-latest"}')[matrix.module] || 'ubuntu-24.04-arm' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ${{ fromJSON(needs.plan.outputs.integration_modules_json) }}
-    env:
-      TESTCONTAINER_DOCKER_NETWORK: integration-testcontainers
-    steps:
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          persist-credentials: false
-
-      - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
-
-      - name: Create Docker network for Testcontainers
-        run: docker network create ${{ env.TESTCONTAINER_DOCKER_NETWORK }}
-
-      - name: Run integration tests
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_USER: ${{ github.actor }}
-          MODULE: ${{ matrix.module }}
-        run: task "${MODULE}:test/integration"
+    uses: ./.github/workflows/test-bindings.yaml
+    with:
+      unit_modules_json:        ${{ needs.plan.outputs.changed_modules_json }}
+      integration_modules_json: ${{ needs.plan.outputs.integration_modules_json }}
 
   # ---------------------------------------------------------------------------
   # 3. Gate — human approval before any tags are created
   # ---------------------------------------------------------------------------
   gate:
     name: Await Release Approval
-    needs: [plan, test_unit, test_integration]
+    needs: [plan, test]
     # Proceed if tests passed or were skipped (no changed modules); block on failure.
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04-arm
@@ -209,8 +132,8 @@ jobs:
           SKIPPED_JSON:    ${{ needs.plan.outputs.skipped_modules_json }}
           HEAD_COMMIT:     ${{ needs.plan.outputs.head_commit }}
           BRANCH:          ${{ github.ref_name }}
-          UNIT_RESULT:     ${{ needs.test_unit.result }}
-          INTEG_RESULT:    ${{ needs.test_integration.result }}
+          UNIT_RESULT:     ${{ needs.test.outputs.unit_result }}
+          INTEG_RESULT:    ${{ needs.test.outputs.integration_result }}
         run: |
           {
             echo "## 🔖 Binding Release Plan"
