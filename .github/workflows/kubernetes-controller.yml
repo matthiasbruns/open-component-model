@@ -104,13 +104,14 @@ jobs:
             ${{ env.LOCATION }}
             Taskfile.yml
             .env
+            go.work
           persist-credentials: false
           ref: ${{ env.REF }}
 
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: ${{ env.LOCATION }}/go.mod
+          go-version-file: go.work
           cache-dependency-path: ${{ env.LOCATION }}/go.sum
 
       - name: Install Task
