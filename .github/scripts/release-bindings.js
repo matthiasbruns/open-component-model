@@ -167,6 +167,28 @@ export function pseudoVersion(execGit = git) {
 }
 
 /**
+ * Scan git log for a module since its last tag for breaking change markers
+ * (Conventional Commits: `type!:` subject or `BREAKING CHANGE:` footer).
+ * Returns 'minor' if any are found, 'patch' otherwise.
+ * Returns 'patch' immediately when lastTag is null — untagged modules use a
+ * pseudo-version regardless of bump kind.
+ *
+ * @param {string} modPath
+ * @param {string|null} lastTag
+ * @param {(args: string[]) => string} [execGit]
+ * @returns {'minor'|'patch'}
+ */
+export function detectBump(modPath, lastTag, execGit = git) {
+  if (!lastTag) return 'patch';
+  try {
+    const log = execGit(['log', `${lastTag}..HEAD`, '--', modPath, '--format=%s%n%b']);
+    return /(!:|BREAKING[- ]CHANGE)/i.test(log) ? 'minor' : 'patch';
+  } catch {
+    return 'patch';
+  }
+}
+
+/**
  * Compute the next tag for a module.
  * - Already tagged: bumps the latest semver tag by bumpKind.
  * - Never tagged: uses a pseudo-version anchored to the current HEAD commit,
@@ -236,15 +258,24 @@ export async function buildGraph({ core }) {
  * @param {import('@actions/github-script').AsyncFunctionArguments} args
  */
 export async function planRelease({ core }) {
-  const ordered  = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
-  const bumpKind = /** @type {'patch'|'minor'|'major'} */ (process.env.BUMP ?? 'patch');
+  const ordered    = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+  const bumpFloor  = /** @type {'patch'|'minor'|'major'} */ (process.env.BUMP ?? 'patch');
 
   /** @type {Record<string, string>} */
   const tags = {};
   core.info('Planned tags:');
   for (const mod of ordered) {
-    tags[mod] = computeNextTag(mod, bumpKind);
-    core.info(`  ${mod} → ${tags[mod]}`);
+    // When BUMP=patch (the default), auto-detect per module from git log.
+    // When BUMP=minor or major, that explicit choice is always honoured.
+    let bump = bumpFloor;
+    if (bumpFloor === 'patch') {
+      const latest  = latestVersionTag(mod);
+      const detected = detectBump(mod, latest);
+      if (detected === 'minor') bump = 'minor';
+    }
+
+    tags[mod] = computeNextTag(mod, bump);
+    core.info(`  ${mod} → ${tags[mod]}${bump === 'minor' ? '  ⚠ breaking change' : ''}`);
   }
 
   core.setOutput('tags_json', JSON.stringify(tags));
