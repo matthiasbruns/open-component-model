@@ -5,18 +5,11 @@
 // no go.mod modifications. Safe to run at any time.
 //
 // Usage:
-//   node .github/scripts/release-bindings-dryrun.js [patch|minor|major]
+//   node .github/scripts/release-bindings-dryrun.js
 
 import { buildGraph, planRelease, pinDeps, publish } from './release-bindings.js';
 
-const bump = process.argv[2] ?? 'patch';
-if (!['patch', 'minor', 'major'].includes(bump)) {
-  console.error(`Usage: node release-bindings-dryrun.js [patch|minor|major]`);
-  process.exit(1);
-}
-
 process.env.GITHUB_WORKSPACE = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
-process.env.BUMP    = bump;
 process.env.DRY_RUN = 'true';
 
 // Minimal mock of @actions/core that prints to stdout and captures outputs.

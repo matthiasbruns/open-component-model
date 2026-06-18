@@ -23,6 +23,11 @@ on:
         required: false
         default: true
         type: boolean
+      skip_bindings:
+        description: "Skip the binding release entirely (e.g. for a CLI/controller hotfix that does not touch bindings)."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -153,13 +158,12 @@ jobs:
   release_bindings:
     name: Release Binding Modules
     needs: [prepare]
-    if: ${{ github.event.inputs.dry_run == 'false' }}
+    if: ${{ github.event.inputs.dry_run == 'false' && github.event.inputs.skip_bindings != 'true' }}
     uses: ./.github/workflows/release-bindings.yaml
     permissions:
       contents: write
       id-token: write
     with:
-      bump: patch
       dry_run: false
       consumers_json: '["cli","kubernetes/controller"]'
     secrets: inherit
@@ -175,8 +179,9 @@ jobs:
     environment:
       name: automation
       deployment: false
+    # release_bindings may be skipped (skip_bindings=true) — allow that without blocking.
     needs: [prepare, release_bindings]
-    if: ${{ github.event.inputs.dry_run == 'false' }}
+    if: ${{ github.event.inputs.dry_run == 'false' && !failure() && !cancelled() }}
     permissions:
       contents: write
     outputs:

@@ -1,21 +1,12 @@
 import assert from 'assert';
 import {
   discoverModules, internalDepsOf, topoSort,
-  bumpVersion, tagToVersion, latestVersionTag, computeNextTag, pseudoVersion,
+  bumpVersion, tagToVersion, latestVersionTag, computeNextTag,
   hasChanges, detectBump, pinsFor,
 } from './release-bindings.js';
 
-/**
- * @param {string} tagOutput   returned for `git tag --list`
- * @param {string} [headHash]  returned for `git rev-parse HEAD`
- * @param {string} [headTs]    returned for `git log -1 --format=%ct` (unix seconds)
- */
-const mockGit = (tagOutput, headHash = 'aabbccddeeff', headTs = '1750000000') =>
-  (/** @type {string[]} */ args) => {
-    if (args.includes('rev-parse')) return headHash;
-    if (args.includes('%ct'))       return headTs;   // timestamp-only log format
-    return tagOutput;                                // tag list + commit-message log
-  };
+/** @param {string} output  returned for all git calls (tag list, log, etc.) */
+const mockGit = (output) => (/** @type {string[]} */ _args) => output;
 
 // ----------------------------------------------------------
 // discoverModules
@@ -92,23 +83,6 @@ assert.strictEqual(tagToVersion('bindings/go/oci/v0.0.47'),          'v0.0.47');
 assert.strictEqual(tagToVersion('bindings/go/descriptor/v2/v2.0.3'), 'v2.0.3');
 
 // ----------------------------------------------------------
-// pseudoVersion
-// ----------------------------------------------------------
-console.log('Testing pseudoVersion...');
-
-{
-  const pv = pseudoVersion(mockGit('', 'abc123def456', '1750000000'));
-  // 1750000000 Unix → 2025-06-16T…; check structural format
-  assert.match(pv, /^v0\.0\.0-\d{14}-[0-9a-f]{12}$/, 'pseudo-version format');
-  assert.ok(pv.endsWith('-abc123def456'), 'embeds commit hash');
-}
-{
-  // Hash is truncated to 12 chars
-  const pv = pseudoVersion(mockGit('', 'aabbccddeeff0011', '1750000000'));
-  assert.ok(pv.endsWith('-aabbccddeeff'), 'truncates hash to 12 chars');
-}
-
-// ----------------------------------------------------------
 // latestVersionTag / computeNextTag
 // ----------------------------------------------------------
 console.log('Testing latestVersionTag / computeNextTag...');
@@ -117,22 +91,16 @@ assert.strictEqual(latestVersionTag('m', mockGit('m/v0.0.46')),           'm/v0.
 assert.strictEqual(latestVersionTag('m', mockGit('')),                     null);
 assert.strictEqual(latestVersionTag('m', () => { throw new Error(); }),    null, 'git error → null');
 
-// No existing tag → pseudo-version (not v0.0.1)
-{
-  const git = mockGit('', 'abc123def456', '1750000000');
-  const tag = computeNextTag('bindings/go/cel', 'patch', git);
-  assert.ok(tag.startsWith('bindings/go/cel/v0.0.0-'), 'untagged module gets pseudo-version');
-  assert.ok(tag.endsWith('-abc123def456'), 'pseudo-version embeds commit hash');
-  assert.ok(!tag.includes('v0.0.1'), 'does not fall back to v0.0.1');
-}
+// No existing tag → null (pinned via go get @commit instead)
+assert.strictEqual(computeNextTag('bindings/go/cel',  'patch', mockGit('')), null);
+assert.strictEqual(computeNextTag('bindings/go/cel',  'minor', mockGit('')), null);
+
 // Already tagged → bump normally
 assert.strictEqual(computeNextTag('bindings/go/oci', 'patch', mockGit('bindings/go/oci/v0.0.46')), 'bindings/go/oci/v0.0.47');
 assert.strictEqual(computeNextTag('bindings/go/oci', 'minor', mockGit('bindings/go/oci/v0.0.46')), 'bindings/go/oci/v0.1.0');
-assert.strictEqual(computeNextTag('bindings/go/oci', 'major', mockGit('bindings/go/oci/v0.0.46')), 'bindings/go/oci/v1.0.0');
-// Uses highest tag when multiple returned
 // mock returns tags in ascending order (as git --sort=version:refname does)
 assert.strictEqual(computeNextTag('bindings/go/ctf', 'patch', mockGit('bindings/go/ctf/v0.4.0\nbindings/go/ctf/v0.4.1')), 'bindings/go/ctf/v0.4.2');
-// Previously pseudo-versioned → next release bumps to v0.0.1
+// Previously pseudo-versioned → graduated to proper semver on next release
 assert.strictEqual(computeNextTag('bindings/go/cel', 'patch', mockGit('bindings/go/cel/v0.0.0-20260101000000-abc123def456')), 'bindings/go/cel/v0.0.1');
 
 // ----------------------------------------------------------
