@@ -85,8 +85,6 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     needs: verify-chart
-    env:
-      GOWORK: 'off'
     outputs:
       artifact_name: ${{ env.ARTIFACT_NAME }}
       artifact_id: ${{ steps.upload-artifacts.outputs.artifact-id }}
@@ -104,9 +102,11 @@ jobs:
           sparse-checkout: |
             .github/scripts
             ${{ env.LOCATION }}
+            bindings/
             Taskfile.yml
             .env
             go.work
+            go.work.sum
           persist-credentials: false
           ref: ${{ env.REF }}
 

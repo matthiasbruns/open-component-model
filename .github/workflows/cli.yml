@@ -49,10 +49,6 @@ jobs:
   build:
     name: Build CLI
     runs-on: ubuntu-24.04-arm
-    env:
-      # go.work is checked out for version detection only; bindings are not
-      # present in the sparse checkout, so disable the workspace for builds.
-      GOWORK: 'off'
     outputs:
       artifact_name: ${{ env.ARTIFACT_NAME }}
       artifact_id: ${{ steps.upload-artifacts.outputs.artifact_id }}
@@ -70,7 +66,9 @@ jobs:
           sparse-checkout: |
             .github/scripts
             ${{ env.LOCATION }}
+            bindings/
             go.work
+            go.work.sum
           persist-credentials: 'false'  # Disable automatic token persistence
           ref: ${{ env.REF }}
 
