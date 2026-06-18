@@ -322,6 +322,12 @@ export async function planRelease({core}) {
         .filter(mod => existsSync(join(repoRoot, mod, 'integration', 'Taskfile.yml')))
         .map(mod => `${mod}/integration`);
 
+    // Compute the Go pseudo-version for untagged modules so the gate can display it.
+    const headCommit = git(['rev-parse', 'HEAD']);
+    const tsRaw      = git(['log', '-1', '--format=%ct', 'HEAD']);
+    const date       = new Date(Number(tsRaw) * 1000).toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const pseudoVer  = `v0.0.0-${date}-${headCommit.slice(0, 12)}`;
+
     core.setOutput('tags_json',                JSON.stringify(tags));
     core.setOutput('from_tags_json',           JSON.stringify(fromTags));
     core.setOutput('bump_kinds_json',          JSON.stringify(bumpKinds));
@@ -329,7 +335,8 @@ export async function planRelease({core}) {
     core.setOutput('changed_modules_json',     JSON.stringify(changed));
     core.setOutput('skipped_modules_json',     JSON.stringify(skipped));
     core.setOutput('integration_modules_json', JSON.stringify(integrationModules));
-    core.setOutput('head_commit',              git(['rev-parse', 'HEAD']));
+    core.setOutput('head_commit',              headCommit);
+    core.setOutput('pseudo_version',           pseudoVer);
 }
 
 /**
