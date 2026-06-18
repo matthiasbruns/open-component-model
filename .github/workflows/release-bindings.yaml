@@ -53,7 +53,6 @@ jobs:
       tags_json:                ${{ steps.plan.outputs.tags_json }}
       from_tags_json:           ${{ steps.plan.outputs.from_tags_json }}
       bump_kinds_json:          ${{ steps.plan.outputs.bump_kinds_json }}
-      changelogs_json:          ${{ steps.plan.outputs.changelogs_json }}
       changed_modules_json:     ${{ steps.plan.outputs.changed_modules_json }}
       skipped_modules_json:     ${{ steps.plan.outputs.skipped_modules_json }}
       integration_modules_json: ${{ steps.plan.outputs.integration_modules_json }}
@@ -109,6 +108,14 @@ jobs:
             const { planRelease } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
             await planRelease({ core });
 
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: binding-release-plan
+          path: ${{ runner.temp }}/changelogs.json
+          retention-days: 7
+          if-no-files-found: error
+
   # ---------------------------------------------------------------------------
   # 2. Tests — reuses test-bindings.yaml (same workflow as CI uses on PRs)
   # ---------------------------------------------------------------------------
@@ -132,12 +139,18 @@ jobs:
     environment:
       name: release
     steps:
+      - name: Download plan artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: binding-release-plan
+          path: ${{ runner.temp }}/plan
+
       - name: Release plan summary
         env:
           TAGS_JSON:       ${{ needs.plan.outputs.tags_json }}
           FROM_TAGS_JSON:  ${{ needs.plan.outputs.from_tags_json }}
           BUMP_KINDS_JSON: ${{ needs.plan.outputs.bump_kinds_json }}
-          CHANGELOGS_JSON: ${{ needs.plan.outputs.changelogs_json }}
+          CHANGELOGS_FILE: ${{ runner.temp }}/plan/changelogs.json
           CHANGED_JSON:    ${{ needs.plan.outputs.changed_modules_json }}
           SKIPPED_JSON:    ${{ needs.plan.outputs.skipped_modules_json }}
           HEAD_COMMIT:     ${{ needs.plan.outputs.head_commit }}
@@ -185,11 +198,11 @@ jobs:
             echo "| Integration tests | $INTEG_RESULT |"
             echo ""
 
-            # Per-module changelogs — same format as release-go-submodule.yaml
+            # Per-module changelogs from artifact — same format as release-go-submodule.yaml
             echo "### 📋 Changelogs"
             echo "$TAGS_JSON" | jq -r 'keys[]' | while IFS= read -r mod; do
               tag=$(echo "$TAGS_JSON" | jq -r --arg m "$mod" '.[$m]')
-              log=$(echo "$CHANGELOGS_JSON" | jq -r --arg m "$mod" '.[$m] // "No changes"')
+              log=$(jq -r --arg m "$mod" '.[$m] // "No changes"' "$CHANGELOGS_FILE")
               echo "<details><summary><code>$tag</code></summary>"
               echo ""
               echo "$log"
