@@ -8,7 +8,6 @@
 //   publish      → signed git tags + push + step summary
 
 import {execFileSync} from 'child_process';
-import {readFileSync} from 'fs';
 import {join} from 'path';
 
 const OCM_PREFIX = 'ocm.software/open-component-model/';
@@ -42,19 +41,21 @@ function go_(args, opts = {}) {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse go.work and return repo-relative binding module paths.
+ * Return repo-relative binding module paths from go.work.
+ * Uses `go work edit -json` for authoritative parsing — no regex.
  * Excludes /integration test modules.
  *
  * @param {string} repoRoot
- * @param {(path: string, encoding: any) => string} [readFile]
  * @returns {string[]}
  */
-export function discoverModules(repoRoot, readFile = readFileSync) {
-    const src = /** @type {string} */ (readFile(join(repoRoot, 'go.work'), 'utf-8'));
-    const block = src.match(/^use\s*\(([\s\S]*?)\)/m)?.[1] ?? '';
-    return block
-        .split('\n')
-        .map(l => l.trim().replace(/^\.\//, ''))
+export function discoverModules(repoRoot) {
+    const raw = /** @type {string} */ (execFileSync(
+        'go', ['work', 'edit', '-json'],
+        {encoding: 'utf-8', stdio: 'pipe', cwd: repoRoot},
+    ));
+    const {Use = []} = /** @type {{Use?: {DiskPath: string}[]}} */ (JSON.parse(raw));
+    return Use
+        .map(u => u.DiskPath.replace(/^\.\//, ''))
         .filter(p => p.startsWith('bindings/go/') && !p.endsWith('/integration'));
 }
 
