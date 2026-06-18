@@ -46,7 +46,7 @@ jobs:
   # 1. Plan — what will be released and at what version
   # ---------------------------------------------------------------------------
   plan:
-    name: Plan Release
+    name: Plan Binding Release
     runs-on: ubuntu-24.04-arm
     outputs:
       ordered_json:             ${{ steps.graph.outputs.ordered_json }}
@@ -58,6 +58,7 @@ jobs:
       skipped_modules_json:     ${{ steps.plan.outputs.skipped_modules_json }}
       integration_modules_json: ${{ steps.plan.outputs.integration_modules_json }}
       head_commit:              ${{ steps.plan.outputs.head_commit }}
+      pseudo_version:           ${{ steps.plan.outputs.pseudo_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -65,6 +66,15 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+
+      - name: Fetch tags from upstream
+        # On forks, origin has no binding tags — fetch them read-only from the
+        # canonical repo so latestTag() sees the real version history.
+        # On the main repo this is a no-op (upstream == origin).
+        # The upstream remote has no credentials: push to it is structurally impossible.
+        run: |
+          git remote add upstream https://github.com/open-component-model/open-component-model.git || true
+          git fetch upstream --tags --no-recurse-submodules
 
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -131,6 +141,7 @@ jobs:
           CHANGED_JSON:    ${{ needs.plan.outputs.changed_modules_json }}
           SKIPPED_JSON:    ${{ needs.plan.outputs.skipped_modules_json }}
           HEAD_COMMIT:     ${{ needs.plan.outputs.head_commit }}
+          PSEUDO_VERSION:  ${{ needs.plan.outputs.pseudo_version }}
           BRANCH:          ${{ github.ref_name }}
           UNIT_RESULT:     ${{ needs.test.outputs.unit_result }}
           INTEG_RESULT:    ${{ needs.test.outputs.integration_result }}
@@ -153,9 +164,9 @@ jobs:
               '[.[] | select($tags[.] == null)] | if length > 0 then . else empty end')
             if [ -n "$UNTAGGED" ]; then
               echo "### 📌 Pinned by commit (no semver tag yet)"
-              echo "| Module | Commit |"
+              echo "| Module | Version |"
               echo "| :--- | :--- |"
-              echo "$UNTAGGED" | jq -r '.[] | "| `\(.)` | `'"${HEAD_COMMIT:0:12}"'` |"'
+              echo "$UNTAGGED" | jq -r '.[] | "| `\(.)` | `'"$PSEUDO_VERSION"'` |"'
               echo ""
             fi
 
@@ -219,6 +230,13 @@ jobs:
           fetch-tags: true
           token: ${{ steps.token.outputs.token || github.token }}
           # persist-credentials kept — git push authenticates via the stored app token
+
+      - name: Fetch tags from upstream
+        # pinDeps calls latestTag() to distinguish semver-tagged deps from untagged ones.
+        # Without upstream tags it would incorrectly use go get @commit for tagged deps.
+        run: |
+          git remote add upstream https://github.com/open-component-model/open-component-model.git || true
+          git fetch upstream --tags --no-recurse-submodules
 
       - name: Setup git identity
         env:
