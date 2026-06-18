@@ -150,7 +150,27 @@ export function latestVersionTag(modPath, execGit = git) {
 }
 
 /**
- * Compute the next tag for a module. Returns "<modPath>/v0.0.1" for first release.
+ * Build a Go pseudo-version string for modules that have never been tagged.
+ * Format: v0.0.0-YYYYMMDDHHMMSS-{12-char commit hash}  (Go module proxy compatible)
+ *
+ * @param {(args: string[]) => string} execGit
+ * @returns {string}
+ */
+export function pseudoVersion(execGit = git) {
+  const hash  = execGit(['rev-parse', 'HEAD']).slice(0, 12);
+  const tsRaw = execGit(['log', '-1', '--format=%ct', 'HEAD']);
+  const date  = new Date(Number(tsRaw) * 1000)
+    .toISOString()
+    .replace(/[^0-9]/g, '')
+    .slice(0, 14);
+  return `v0.0.0-${date}-${hash}`;
+}
+
+/**
+ * Compute the next tag for a module.
+ * - Already tagged: bumps the latest semver tag by bumpKind.
+ * - Never tagged: uses a pseudo-version anchored to the current HEAD commit,
+ *   consistent with the v0.0.0-{ts}-{hash} format already in use across go.mod files.
  *
  * @param {string} modPath
  * @param {'patch'|'minor'|'major'} bumpKind
@@ -160,7 +180,7 @@ export function latestVersionTag(modPath, execGit = git) {
 export function computeNextTag(modPath, bumpKind, execGit = git) {
   const prefix = `${modPath}/v`;
   const latest = latestVersionTag(modPath, execGit);
-  if (!latest) return `${prefix}0.0.1`;
+  if (!latest) return `${modPath}/${pseudoVersion(execGit)}`;
   return `${prefix}${bumpSemver(latest.replace(prefix, ''), bumpKind)}`;
 }
 
