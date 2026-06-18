@@ -29,16 +29,16 @@ const mockGit = (tagOutput, headHash = 'aabbccddeeff', headTs = '1750000000') =>
 console.log('Testing discoverModules...');
 
 {
-  const goWork = 'go 1.26\n\nuse (\n\t./bindings/go/blob\n\t./bindings/go/oci/integration\n\t./bindings/go/oci\n\t./cli\n)\n';
-  assert.deepStrictEqual(
-    discoverModules('/r', mockReadFile({ '/r/go.work': goWork })),
-    ['bindings/go/blob', 'bindings/go/oci'],
-    'excludes integration and non-bindings',
-  );
-}
-{
-  const goWork = 'go 1.26\n\nuse (\n)\n';
-  assert.deepStrictEqual(discoverModules('/r', mockReadFile({ '/r/go.work': goWork })), []);
+  const repoRoot = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+  const mods = discoverModules(repoRoot);
+
+  assert.ok(mods.length > 0, 'finds modules');
+  assert.ok(mods.every(m => m.startsWith('bindings/go/')), 'all paths are binding paths');
+  assert.ok(!mods.some(m => m.endsWith('/integration')), 'no integration test modules');
+  assert.ok(!mods.includes('cli'), 'cli excluded');
+  assert.ok(!mods.includes('kubernetes/controller'), 'controller excluded');
+  assert.ok(mods.includes('bindings/go/oci'), 'spot-check: oci present');
+  assert.ok(mods.includes('bindings/go/descriptor/v2'), 'spot-check: nested path present');
 }
 
 // ----------------------------------------------------------
