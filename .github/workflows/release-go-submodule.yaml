@@ -26,6 +26,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Shared with release-bindings.yaml — prevents a manual single-module release
+  # from racing with the automated bulk binding release (and vice versa).
+  # cancel-in-progress: false so a running release is never cancelled, only queued.
+  cancel-in-progress: false
+  group: binding-release
+
 jobs:
   version:
     runs-on: ubuntu-24.04-arm

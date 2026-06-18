@@ -1,34 +1,30 @@
 name: Release Bindings
 
-# Releases all Go binding modules in topological dependency order.
-# Each step calls one named export from release-bindings.js:
-#   buildGraph  → discover modules + topo-sort
-#   planRelease → compute next semver tag per module
-#   pinDeps     → go mod edit -require + go mod tidy
-#   publish     → signed tags + push + summary
+# Phased binding release with a human gate before any tags are pushed:
+#
+#  1. plan   — discover modules, compute next tags, detect breaking changes
+#  2. test   — run unit tests for every changed module in parallel
+#  3. gate   — environment approval: reviewer sees plan + test results
+#  4. release — pin go.mods, commit, create signed tags, push
+#
+# Callers (release.yml) receive tags_json after the release job completes.
+# The gate uses the 'release' GitHub environment — configure required
+# reviewers there to control who can approve a binding release.
 
 on:
   workflow_dispatch:
     inputs:
-      bump:
-        description: "Version bump type applied to every binding module"
-        type: choice
-        options: [patch, minor, major]
-        default: patch
       dry_run:
         description: "Print the release plan without pushing commits or tags"
         type: boolean
         default: true
   workflow_call:
     inputs:
-      bump:
-        type: string
-        default: patch
       dry_run:
         type: boolean
         default: false
       consumers_json:
-        description: "JSON array of module paths (relative to repo root) whose go.mod files should be pinned to the newly released binding versions. Defaults to cli and controller."
+        description: "JSON array of consumer module paths to pin after binding release (e.g. cli, controller)."
         type: string
         default: '["cli","kubernetes/controller"]'
     outputs:
@@ -40,12 +36,235 @@ permissions:
   contents: read
 
 concurrency:
+  # Shared with release-go-submodule.yaml — prevents a manual single-module release
+  # from racing with the automated bulk binding release (and vice versa).
   cancel-in-progress: false
-  group: release-bindings
+  group: binding-release
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Plan — what will be released and at what version
+  # ---------------------------------------------------------------------------
+  plan:
+    name: Plan Release
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      ordered_json:             ${{ steps.graph.outputs.ordered_json }}
+      tags_json:                ${{ steps.plan.outputs.tags_json }}
+      from_tags_json:           ${{ steps.plan.outputs.from_tags_json }}
+      bump_kinds_json:          ${{ steps.plan.outputs.bump_kinds_json }}
+      changelogs_json:          ${{ steps.plan.outputs.changelogs_json }}
+      changed_modules_json:     ${{ steps.plan.outputs.changed_modules_json }}
+      skipped_modules_json:     ${{ steps.plan.outputs.skipped_modules_json }}
+      integration_modules_json: ${{ steps.plan.outputs.integration_modules_json }}
+      head_commit:              ${{ steps.plan.outputs.head_commit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24'
+
+      - name: Install script dependencies
+        working-directory: .github/scripts
+        run: npm ci
+
+      - name: Build dependency graph
+        id: graph
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { buildGraph } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
+            await buildGraph({ core });
+
+      - name: Plan release
+        id: plan
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          ORDERED_JSON: ${{ steps.graph.outputs.ordered_json }}
+        with:
+          script: |
+            const { planRelease } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
+            await planRelease({ core });
+
+  # ---------------------------------------------------------------------------
+  # 2a. Unit tests — one job per changed binding module, same setup as ci.yml
+  # ---------------------------------------------------------------------------
+  test_unit:
+    name: "Unit Tests / ${{ matrix.module }}"
+    needs: [plan]
+    if: ${{ fromJSON(needs.plan.outputs.changed_modules_json)[0] != null }}
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.plan.outputs.changed_modules_json) }}
+    steps:
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          sparse-checkout: |
+            bindings/
+            cli/
+            kubernetes/controller/
+            conformance/scenarios/sovereign/components/notes/
+            go.work
+            go.work.sum
+            reuse.Taskfile.yml
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: '${{ github.workspace }}/${{ matrix.module }}/go.mod'
+          cache-dependency-path: |
+            ${{ github.workspace }}/${{ matrix.module }}/go.sum
+            ${{ github.workspace }}/go.work.sum
+
+      - name: Run unit tests
+        env:
+          MODULE: ${{ matrix.module }}
+        run: task "${MODULE}:test"
+
+  # ---------------------------------------------------------------------------
+  # 2b. Integration tests — for each changed module that has an integration/
+  #     sub-module. Full checkout + Docker network, mirrors ci.yml exactly.
+  # ---------------------------------------------------------------------------
+  test_integration:
+    name: "Integration Tests / ${{ matrix.module }}"
+    needs: [plan]
+    if: ${{ fromJSON(needs.plan.outputs.integration_modules_json)[0] != null }}
+    runs-on: ${{ fromJSON('{"bindings/go/sigstore/integration":"ubuntu-latest"}')[matrix.module] || 'ubuntu-24.04-arm' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.plan.outputs.integration_modules_json) }}
+    env:
+      TESTCONTAINER_DOCKER_NETWORK: integration-testcontainers
+    steps:
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: '${{ github.workspace }}/${{ matrix.module }}/go.mod'
+          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
+
+      - name: Create Docker network for Testcontainers
+        run: docker network create ${{ env.TESTCONTAINER_DOCKER_NETWORK }}
+
+      - name: Run integration tests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USER: ${{ github.actor }}
+          MODULE: ${{ matrix.module }}
+        run: task "${MODULE}:test/integration"
+
+  # ---------------------------------------------------------------------------
+  # 3. Gate — human approval before any tags are created
+  # ---------------------------------------------------------------------------
+  gate:
+    name: Await Release Approval
+    needs: [plan, test_unit, test_integration]
+    # Proceed if tests passed or were skipped (no changed modules); block on failure.
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-24.04-arm
+    environment:
+      name: release
+    steps:
+      - name: Release plan summary
+        env:
+          TAGS_JSON:       ${{ needs.plan.outputs.tags_json }}
+          FROM_TAGS_JSON:  ${{ needs.plan.outputs.from_tags_json }}
+          BUMP_KINDS_JSON: ${{ needs.plan.outputs.bump_kinds_json }}
+          CHANGELOGS_JSON: ${{ needs.plan.outputs.changelogs_json }}
+          CHANGED_JSON:    ${{ needs.plan.outputs.changed_modules_json }}
+          SKIPPED_JSON:    ${{ needs.plan.outputs.skipped_modules_json }}
+          HEAD_COMMIT:     ${{ needs.plan.outputs.head_commit }}
+          BRANCH:          ${{ github.ref_name }}
+          UNIT_RESULT:     ${{ needs.test_unit.result }}
+          INTEG_RESULT:    ${{ needs.test_integration.result }}
+        run: |
+          {
+            echo "## 🔖 Binding Release Plan"
+            echo ""
+            echo "**Branch:** \`$BRANCH\` | **Commit:** \`${HEAD_COMMIT:0:12}\`"
+            echo ""
+
+            echo "### 🏷 New semver tags"
+            echo "| Module | From | To | Bump |"
+            echo "| :--- | :--- | :--- | :--- |"
+            echo "$TAGS_JSON" | jq -r --argjson from "$FROM_TAGS_JSON" --argjson bumps "$BUMP_KINDS_JSON" \
+              'to_entries[] | "| `\(.key)` | `\($from[.key] // "(none)")` | `\(.value)` | \(if $bumps[.key] == "minor" then "**minor** ⚠ breaking" else "patch" end) |"'
+            echo ""
+
+            # Untagged modules that will be pinned by commit rather than a semver tag
+            UNTAGGED=$(echo "$CHANGED_JSON" | jq -r --argjson tags "$TAGS_JSON" \
+              '[.[] | select($tags[.] == null)] | if length > 0 then . else empty end')
+            if [ -n "$UNTAGGED" ]; then
+              echo "### 📌 Pinned by commit (no semver tag yet)"
+              echo "| Module | Commit |"
+              echo "| :--- | :--- |"
+              echo "$UNTAGGED" | jq -r '.[] | "| `\(.)` | `'"${HEAD_COMMIT:0:12}"'` |"'
+              echo ""
+            fi
+
+            # Modules skipped because nothing changed since their last release
+            SKIPPED_LIST=$(echo "$SKIPPED_JSON" | jq -r 'if length > 0 then map("`\(.)`") | join(", ") else empty end')
+            if [ -n "$SKIPPED_LIST" ]; then
+              echo "### ⏭ Skipped (unchanged since last release)"
+              echo "$SKIPPED_LIST"
+              echo ""
+            fi
+
+            echo "### 🧪 Test results"
+            echo "| Suite | Result |"
+            echo "| :--- | :--- |"
+            echo "| Unit tests | $UNIT_RESULT |"
+            echo "| Integration tests | $INTEG_RESULT |"
+            echo ""
+
+            # Per-module changelogs — same format as release-go-submodule.yaml
+            echo "### 📋 Changelogs"
+            echo "$TAGS_JSON" | jq -r 'keys[]' | while IFS= read -r mod; do
+              tag=$(echo "$TAGS_JSON" | jq -r --arg m "$mod" '.[$m]')
+              log=$(echo "$CHANGELOGS_JSON" | jq -r --arg m "$mod" '.[$m] // "No changes"')
+              echo "<details><summary><code>$tag</code></summary>"
+              echo ""
+              echo "$log"
+              echo ""
+              echo "</details>"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 4. Release — pin go.mods, commit, tag, push (only after approval)
+  # ---------------------------------------------------------------------------
   release:
     name: Release Binding Modules
+    needs: [plan, gate]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04-arm
     environment:
       name: go-modules
@@ -70,7 +289,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           token: ${{ steps.token.outputs.token || github.token }}
-          # persist-credentials kept — git push authenticates via the stored token
+          # persist-credentials kept — git push authenticates via the stored app token
 
       - name: Setup git identity
         env:
@@ -80,7 +299,7 @@ jobs:
           git config --global user.email "$GIT_USER@users.noreply.github.com"
 
       - name: Import GPG key
-        # Skipped on forks / when secrets are absent — signing is only required for real releases.
+        # Skipped on forks / when secrets are absent — signing only required for real releases.
         if: ${{ secrets.GPG_PRIVATE_KEY_FOR_SIGNING != '' }}
         uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
@@ -105,31 +324,14 @@ jobs:
         working-directory: .github/scripts
         run: npm ci
 
-      - name: Build dependency graph
-        id: graph
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        with:
-          script: |
-            const { buildGraph } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
-            await buildGraph({ core });
-
-      - name: Plan release
-        id: plan
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          ORDERED_JSON: ${{ steps.graph.outputs.ordered_json }}
-          BUMP: ${{ inputs.bump || 'patch' }}
-        with:
-          script: |
-            const { planRelease } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
-            await planRelease({ core });
-
       - name: Pin go.mod dependencies
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          ORDERED_JSON: ${{ steps.graph.outputs.ordered_json }}
+          ORDERED_JSON:  ${{ needs.plan.outputs.ordered_json }}
           CONSUMERS_JSON: ${{ inputs.consumers_json || '["cli","kubernetes/controller"]' }}
-          TAGS_JSON: ${{ steps.plan.outputs.tags_json }}
+          TAGS_JSON:     ${{ needs.plan.outputs.tags_json }}
+          HEAD_COMMIT:   ${{ needs.plan.outputs.head_commit }}
+          DRY_RUN:       ${{ inputs.dry_run == true && 'true' || 'false' }}
         with:
           script: |
             const { pinDeps } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
@@ -145,9 +347,9 @@ jobs:
         id: publish
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          TAGS_JSON: ${{ steps.plan.outputs.tags_json }}
-          DRY_RUN: ${{ inputs.dry_run == true && 'true' || 'false' }}
-          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          TAGS_JSON: ${{ needs.plan.outputs.tags_json }}
+          DRY_RUN:   ${{ inputs.dry_run == true && 'true' || 'false' }}
+          GITHUB_TOKEN: ${{ steps.token.outputs.token || github.token }}
         with:
           script: |
             const { publish } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');

@@ -8,6 +8,7 @@
 //   publish      → signed git tags + push + step summary
 
 import {execFileSync} from 'child_process';
+import {existsSync} from 'fs';
 import {join} from 'path';
 import {tagPrefix, latestTag, bumpVersion} from './submodule-version.js'; // eslint-disable-line -- tagPrefix used in computeNextTag below
 
@@ -150,23 +151,6 @@ export function tagToVersion(tag) {
 export {latestTag as latestVersionTag} from './submodule-version.js';
 
 /**
- * Build a Go pseudo-version string for modules that have never been tagged.
- * Format: v0.0.0-YYYYMMDDHHMMSS-{12-char commit hash}  (Go module proxy compatible)
- *
- * @param {(args: string[]) => string} execGit
- * @returns {string}
- */
-export function pseudoVersion(execGit = git) {
-    const hash = execGit(['rev-parse', 'HEAD']).slice(0, 12);
-    const tsRaw = execGit(['log', '-1', '--format=%ct', 'HEAD']);
-    const date = new Date(Number(tsRaw) * 1000)
-        .toISOString()
-        .replace(/[^0-9]/g, '')
-        .slice(0, 14);
-    return `v0.0.0-${date}-${hash}`;
-}
-
-/**
  * Return true if a module has any commits touching its path since its last tag.
  * Always returns true for modules with no previous tag (first release).
  *
@@ -207,20 +191,19 @@ export function detectBump(modPath, lastTag, execGit = git) {
 }
 
 /**
- * Compute the next tag for a module.
- * - Already tagged: bumps the latest semver tag by bumpKind.
- * - Never tagged: uses a pseudo-version anchored to the current HEAD commit,
- *   consistent with the v0.0.0-{ts}-{hash} format already in use across go.mod files.
+ * Compute the next semver tag for an already-tagged module.
+ * Returns null for modules with no existing tag — those are pinned
+ * via `go get @commit` instead (no tag created).
  *
  * @param {string} modPath
- * @param {'patch'|'minor'|'major'} bumpKind
+ * @param {'patch'|'minor'} bumpKind
  * @param {(args: string[]) => string} [execGit]
- * @returns {string}
+ * @returns {string|null}
  */
 export function computeNextTag(modPath, bumpKind, execGit = git) {
     const prefix = tagPrefix(modPath);
     const latest = latestTag(modPath, execGit);
-    if (!latest) return `${modPath}/${pseudoVersion(execGit)}`;
+    if (!latest) return null;
     return `${prefix}${bumpVersion(latest.replace(prefix, ''), bumpKind)}`;
 }
 
@@ -276,35 +259,77 @@ export async function buildGraph({core}) {
  * @param {import('@actions/github-script').AsyncFunctionArguments} args
  */
 export async function planRelease({core}) {
-    const ordered = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
-    const bumpFloor = /** @type {'patch'|'minor'|'major'} */ (process.env.BUMP ?? 'patch');
+    const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+    const ordered  = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
 
     /** @type {Record<string, string>} */
     const tags = {};
+    /** @type {Record<string, string>} module → previous tag (for from→to display in gate) */
+    const fromTags = {};
+    /** @type {Record<string, string>} module → detected bump kind (for gate summary) */
+    const bumpKinds = {};
+    /** @type {string[]} modules that changed and need testing + pinning (tagged or untagged) */
+    const changed = [];
+    /** @type {string[]} modules skipped because nothing changed since last release */
     const skipped = [];
 
     core.info('Planned tags:');
     for (const mod of ordered) {
         const currentTag = latestTag(mod);
 
-        // Skip modules with no changes since their last release.
         if (!hasChanges(mod, currentTag)) {
             core.info(`  ${mod} → (unchanged since ${currentTag ?? 'untagged'}, skipping)`);
             skipped.push(mod);
             continue;
         }
 
-        // When BUMP=patch (default), auto-detect per module from git log.
-        // When BUMP=minor or major, that explicit choice is always honoured.
-        let bump = bumpFloor;
-        if (bumpFloor === 'patch' && detectBump(mod, currentTag) === 'minor') bump = 'minor';
+        changed.push(mod);
 
-        tags[mod] = computeNextTag(mod, bump);
-        core.info(`  ${mod} → ${tags[mod]}${bump === 'minor' ? '  ⚠ breaking change' : ''}`);
+        const bump = detectBump(mod, currentTag);
+        const nextTag = computeNextTag(mod, bump);
+
+        if (!nextTag) {
+            core.info(`  ${mod} → (untagged, will pin via commit hash)`);
+            continue;
+        }
+
+        tags[mod]      = nextTag;
+        fromTags[mod]  = currentTag ?? '(none)';
+        bumpKinds[mod] = bump;
+
+        core.info(`  ${mod} → ${nextTag}${bump === 'minor' ? '  ⚠ breaking change' : ''}`);
     }
 
     if (skipped.length) core.info(`\nSkipped ${skipped.length} unchanged module(s)`);
-    core.setOutput('tags_json', JSON.stringify(tags));
+
+    // Changelogs for tagged modules only — same format as release-go-submodule.yaml:
+    // git log --pretty=format:"- %s (%h)" <fromTag>..HEAD -- <modPath>
+    /** @type {Record<string, string>} */
+    const changelogs = {};
+    for (const mod of Object.keys(tags)) {
+        const from = fromTags[mod];
+        try {
+            const log = git(['log', `${from}..HEAD`, '--', mod, '--pretty=format:- %s (%h)']);
+            changelogs[mod] = log || 'No changes';
+        } catch {
+            changelogs[mod] = 'Unable to generate changelog';
+        }
+    }
+
+    // For each changed module that has a sibling integration/ sub-module, include it
+    // in the integration test matrix — mirrors how ci.yml discovers integration modules.
+    const integrationModules = changed
+        .filter(mod => existsSync(join(repoRoot, mod, 'integration', 'Taskfile.yml')))
+        .map(mod => `${mod}/integration`);
+
+    core.setOutput('tags_json',                JSON.stringify(tags));
+    core.setOutput('from_tags_json',           JSON.stringify(fromTags));
+    core.setOutput('bump_kinds_json',          JSON.stringify(bumpKinds));
+    core.setOutput('changelogs_json',          JSON.stringify(changelogs));
+    core.setOutput('changed_modules_json',     JSON.stringify(changed));
+    core.setOutput('skipped_modules_json',     JSON.stringify(skipped));
+    core.setOutput('integration_modules_json', JSON.stringify(integrationModules));
+    core.setOutput('head_commit',              git(['rev-parse', 'HEAD']));
 }
 
 /**
@@ -314,30 +339,50 @@ export async function planRelease({core}) {
  * @param {import('@actions/github-script').AsyncFunctionArguments} args
  */
 export async function pinDeps({core}) {
-    const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
-    const ordered = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
-    const consumers = /** @type {string[]} */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
-    const tags = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
-    const dryRun = process.env.DRY_RUN === 'true';
+    const repoRoot   = process.env.GITHUB_WORKSPACE ?? process.cwd();
+    const ordered    = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+    const consumers  = /** @type {string[]} */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
+    const tags       = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
+    const headCommit = process.env.HEAD_COMMIT ?? git(['rev-parse', 'HEAD']);
+    const dryRun     = process.env.DRY_RUN === 'true';
 
-    // Process bindings first (in topo order), then consumers (cli, controller).
-    // pinsFor filters by dep in tags, so consumers only get pinned for
-    // bindings that were actually released in this run.
-    const getDeps = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
-    const pinMap = pinsFor([...ordered, ...consumers], tags, getDeps);
+    const taggedSet  = new Set(Object.keys(tags));
+    const getDeps    = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
 
-    for (const [mod, pins] of pinMap) {
+    // For each module (bindings in topo order, then consumers), pin the versions
+    // of any internal deps that changed in this release run:
+    //   - semver-tagged deps: go mod edit -require (tag may not exist yet, no fetch)
+    //   - untagged deps:      GOPROXY=direct go get @commit (Go derives the pseudo-version)
+    for (const mod of [...ordered, ...consumers]) {
+        const deps = getDeps(mod);
+        const semverPins = deps.filter(dep => taggedSet.has(dep));
+        const commitPins = deps.filter(dep => !taggedSet.has(dep) && ordered.includes(dep)
+                                              && !latestTag(dep));
+
+        if (!semverPins.length && !commitPins.length) continue;
+
         core.info(`\nPinning deps in ${mod}:`);
         const modDir = join(repoRoot, mod);
-        for (const {name, version} of pins) {
-            core.info(`  ${dryRun ? '[dry-run] would pin ' : ''}${name}@${version}`);
+
+        for (const dep of semverPins) {
+            const version = tagToVersion(tags[dep]);
+            const name    = `${OCM_PREFIX}${dep}`;
+            core.info(`  ${dryRun ? '[dry-run] ' : ''}${name}@${version}`);
             if (!dryRun) go_(['mod', 'edit', `-require=${name}@${version}`], {cwd: modDir});
         }
+
+        for (const dep of commitPins) {
+            const name = `${OCM_PREFIX}${dep}`;
+            core.info(`  ${dryRun ? '[dry-run] ' : ''}${name}@${headCommit.slice(0, 12)} (commit)`);
+            if (!dryRun) go_(['get', `${name}@${headCommit}`], {
+                cwd: modDir,
+                env: {...process.env, GOPROXY: 'direct', GONOSUMDB: 'ocm.software/open-component-model/*'},
+            });
+        }
+
         if (!dryRun) go_(['mod', 'tidy'], {cwd: modDir});
         else core.info('  [dry-run] would run go mod tidy');
     }
-
-    core.info(`\n${dryRun ? '[dry-run] would pin' : 'Pinned'} deps in ${pinMap.size} module(s)`);
 }
 
 /**
@@ -351,14 +396,31 @@ export async function publish({core}) {
     const dryRun = process.env.DRY_RUN === 'true';
     const entries = Object.entries(tags);
 
+    const head = git(['rev-parse', 'HEAD']);
+
     core.info('Creating tags:');
     for (const [, tag] of entries) {
         if (dryRun) {
             core.info(`  [dry-run] ${tag}`);
-        } else {
-            git(['tag', '-s', '-m', `Release ${tag}`, tag]);
-            core.info(`  ${tag}`);
+            continue;
         }
+
+        // Idempotent: if the tag already exists at HEAD, skip silently.
+        // If it exists at a different commit, fail loudly — that's a real conflict.
+        try {
+            const existing = git(['rev-parse', `refs/tags/${tag}^{commit}`]);
+            if (existing === head) {
+                core.info(`  ${tag} (already exists at HEAD, skipping)`);
+                continue;
+            }
+            core.setFailed(`Tag ${tag} already exists but points to ${existing.slice(0, 7)}, not HEAD ${head.slice(0, 7)}`);
+            return;
+        } catch {
+            // tag does not exist yet — create it
+        }
+
+        git(['tag', '-s', '-m', `Release ${tag}`, tag]);
+        core.info(`  ${tag}`);
     }
 
     if (!dryRun) {
