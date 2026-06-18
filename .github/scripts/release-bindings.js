@@ -240,6 +240,7 @@ export async function pinDeps({ core }) {
   const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const ordered  = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
   const tags     = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
+  const dryRun   = process.env.DRY_RUN === 'true';
 
   const getDeps  = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
   const pinMap   = pinsFor(ordered, tags, getDeps);
@@ -248,13 +249,14 @@ export async function pinDeps({ core }) {
     core.info(`\nPinning deps in ${mod}:`);
     const modDir = join(repoRoot, mod);
     for (const { name, version } of pins) {
-      core.info(`  ${name}@${version}`);
-      go_(['mod', 'edit', `-require=${name}@${version}`], { cwd: modDir });
+      core.info(`  ${dryRun ? '[dry-run] would pin ' : ''}${name}@${version}`);
+      if (!dryRun) go_(['mod', 'edit', `-require=${name}@${version}`], { cwd: modDir });
     }
-    go_(['mod', 'tidy'], { cwd: modDir });
+    if (!dryRun) go_(['mod', 'tidy'], { cwd: modDir });
+    else core.info('  [dry-run] would run go mod tidy');
   }
 
-  core.info(`\nPinned deps in ${pinMap.size} module(s)`);
+  core.info(`\n${dryRun ? '[dry-run] would pin' : 'Pinned'} deps in ${pinMap.size} module(s)`);
 }
 
 /**
