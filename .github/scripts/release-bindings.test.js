@@ -1,7 +1,7 @@
 import assert from 'assert';
 import {
   discoverModules, internalDepsOf, topoSort,
-  bumpSemver, tagToVersion, latestVersionTag, computeNextTag, pseudoVersion,
+  bumpVersion, tagToVersion, latestVersionTag, computeNextTag, pseudoVersion,
   hasChanges, detectBump, pinsFor,
 } from './release-bindings.js';
 
@@ -72,16 +72,16 @@ assert.throws(() => topoSort(['A', 'B'], new Map([['A', ['B']], ['B', ['A']]])),
 assert.deepStrictEqual(topoSort(['A'], new Map([['A', []]])), ['A']);
 
 // ----------------------------------------------------------
-// bumpSemver
+// bumpVersion
 // ----------------------------------------------------------
-console.log('Testing bumpSemver...');
+console.log('Testing bumpVersion...');
 
-assert.strictEqual(bumpSemver('0.0.9',       'patch'), '0.0.10');
-assert.strictEqual(bumpSemver('0.4.1',       'minor'), '0.5.0');
-assert.strictEqual(bumpSemver('0.0.46',      'major'), '1.0.0');
-assert.strictEqual(bumpSemver('v0.0.9',      'patch'), '0.0.10', 'strips v');
-assert.strictEqual(bumpSemver('0.0.9-alpha', 'patch'), '0.0.10', 'strips pre-release');
-assert.strictEqual(bumpSemver('0.9.9',       'minor'), '0.10.0', 'carries');
+assert.strictEqual(bumpVersion('0.0.9',       'patch'), '0.0.10');
+assert.strictEqual(bumpVersion('0.4.1',       'minor'), '0.5.0');
+assert.strictEqual(bumpVersion('0.0.46',      'major'), '1.0.0');
+assert.strictEqual(bumpVersion('v0.0.9',      'patch'), '0.0.10', 'strips v');
+assert.strictEqual(bumpVersion('0.0.9-alpha', 'patch'), '0.0.10', 'strips pre-release');
+assert.strictEqual(bumpVersion('0.9.9',       'minor'), '0.10.0', 'carries');
 
 // ----------------------------------------------------------
 // tagToVersion
@@ -130,7 +130,8 @@ assert.strictEqual(computeNextTag('bindings/go/oci', 'patch', mockGit('bindings/
 assert.strictEqual(computeNextTag('bindings/go/oci', 'minor', mockGit('bindings/go/oci/v0.0.46')), 'bindings/go/oci/v0.1.0');
 assert.strictEqual(computeNextTag('bindings/go/oci', 'major', mockGit('bindings/go/oci/v0.0.46')), 'bindings/go/oci/v1.0.0');
 // Uses highest tag when multiple returned
-assert.strictEqual(computeNextTag('bindings/go/ctf', 'patch', mockGit('bindings/go/ctf/v0.4.1\nbindings/go/ctf/v0.4.0')), 'bindings/go/ctf/v0.4.2');
+// mock returns tags in ascending order (as git --sort=version:refname does)
+assert.strictEqual(computeNextTag('bindings/go/ctf', 'patch', mockGit('bindings/go/ctf/v0.4.0\nbindings/go/ctf/v0.4.1')), 'bindings/go/ctf/v0.4.2');
 // Previously pseudo-versioned → next release bumps to v0.0.1
 assert.strictEqual(computeNextTag('bindings/go/cel', 'patch', mockGit('bindings/go/cel/v0.0.0-20260101000000-abc123def456')), 'bindings/go/cel/v0.0.1');
 

@@ -9,6 +9,7 @@
 
 import {execFileSync} from 'child_process';
 import {join} from 'path';
+import {tagPrefix, latestTag, bumpVersion} from './submodule-version.js'; // eslint-disable-line -- tagPrefix used in computeNextTag below
 
 const OCM_PREFIX = 'ocm.software/open-component-model/';
 
@@ -107,19 +108,19 @@ export function topoSort(modules, depsMap) {
     }
 
     // Start with modules that have no deps to wait on.
-    const ready = modules.filter(module => pendingDepsCount.get(module) === 0);
+    const modulesWithoutDeps = modules.filter(module => pendingDepsCount.get(module) === 0);
     /** @type {string[]} */
     const sorted = [];
 
-    while (ready.length) {
-        const released = ready.shift() ?? '';
+    while (modulesWithoutDeps.length) {
+        const released = modulesWithoutDeps.shift() ?? '';
         sorted.push(released);
 
         // Each module that was waiting on this one has one fewer pending dep.
         for (const dependent of (dependents.get(released) ?? [])) {
             const remaining = (pendingDepsCount.get(dependent) ?? 0) - 1;
             pendingDepsCount.set(dependent, remaining);
-            if (remaining === 0) ready.push(dependent);
+            if (remaining === 0) modulesWithoutDeps.push(dependent);
         }
     }
 
@@ -130,19 +131,9 @@ export function topoSort(modules, depsMap) {
     return sorted;
 }
 
-/**
- * Bump a semver string. Pre-release suffixes are stripped before bumping.
- *
- * @param {string} version  e.g. "0.4.1" or "v0.4.1-alpha"
- * @param {'patch'|'minor'|'major'} kind
- * @returns {string}
- */
-export function bumpSemver(version, kind) {
-    const [maj, min, pat] = version.replace(/^v/, '').split('-')[0].split('.').map(Number);
-    if (kind === 'major') return `${maj + 1}.0.0`;
-    if (kind === 'minor') return `${maj}.${min + 1}.0`;
-    return `${maj}.${min}.${pat + 1}`;
-}
+// bumpVersion and latestTag imported from submodule-version.js (shared with
+// release-go-submodule.yaml). Re-export bumpVersion for test coverage.
+export {bumpVersion} from './submodule-version.js';
 
 /**
  * Extract a bare semver version from a path-scoped module tag.
@@ -155,20 +146,8 @@ export function tagToVersion(tag) {
     return `v${tag.split('/v').at(-1)}`;
 }
 
-/**
- * Get the latest semver tag for a module path, or null if none exists.
- *
- * @param {string} modPath
- * @param {(args: string[]) => string} [execGit]
- * @returns {string|null}
- */
-export function latestVersionTag(modPath, execGit = git) {
-    try {
-        return execGit(['tag', '--list', `${modPath}/v*`, '--sort=-version:refname']).split('\n').find(Boolean) ?? null;
-    } catch {
-        return null;
-    }
-}
+// Alias so existing call-sites in this file and tests still compile.
+export {latestTag as latestVersionTag} from './submodule-version.js';
 
 /**
  * Build a Go pseudo-version string for modules that have never been tagged.
@@ -239,10 +218,10 @@ export function detectBump(modPath, lastTag, execGit = git) {
  * @returns {string}
  */
 export function computeNextTag(modPath, bumpKind, execGit = git) {
-    const prefix = `${modPath}/v`;
-    const latest = latestVersionTag(modPath, execGit);
+    const prefix = tagPrefix(modPath);
+    const latest = latestTag(modPath, execGit);
     if (!latest) return `${modPath}/${pseudoVersion(execGit)}`;
-    return `${prefix}${bumpSemver(latest.replace(prefix, ''), bumpKind)}`;
+    return `${prefix}${bumpVersion(latest.replace(prefix, ''), bumpKind)}`;
 }
 
 /**
@@ -306,11 +285,11 @@ export async function planRelease({core}) {
 
     core.info('Planned tags:');
     for (const mod of ordered) {
-        const latestTag = latestVersionTag(mod);
+        const currentTag = latestTag(mod);
 
         // Skip modules with no changes since their last release.
-        if (!hasChanges(mod, latestTag)) {
-            core.info(`  ${mod} → (unchanged since ${latestTag ?? 'untagged'}, skipping)`);
+        if (!hasChanges(mod, currentTag)) {
+            core.info(`  ${mod} → (unchanged since ${currentTag ?? 'untagged'}, skipping)`);
             skipped.push(mod);
             continue;
         }
@@ -318,7 +297,7 @@ export async function planRelease({core}) {
         // When BUMP=patch (default), auto-detect per module from git log.
         // When BUMP=minor or major, that explicit choice is always honoured.
         let bump = bumpFloor;
-        if (bumpFloor === 'patch' && detectBump(mod, latestTag) === 'minor') bump = 'minor';
+        if (bumpFloor === 'patch' && detectBump(mod, currentTag) === 'minor') bump = 'minor';
 
         tags[mod] = computeNextTag(mod, bump);
         core.info(`  ${mod} → ${tags[mod]}${bump === 'minor' ? '  ⚠ breaking change' : ''}`);
