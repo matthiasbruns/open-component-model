@@ -2,7 +2,7 @@ import assert from 'assert';
 import {
   discoverModules, internalDepsOf, topoSort,
   bumpSemver, tagToVersion, latestVersionTag, computeNextTag, pseudoVersion,
-  pinsFor,
+  detectBump, pinsFor,
 } from './release-bindings.js';
 
 const mockReadFile = (/** @type {Record<string, string>} */ files) =>
@@ -19,8 +19,8 @@ const mockReadFile = (/** @type {Record<string, string>} */ files) =>
 const mockGit = (tagOutput, headHash = 'aabbccddeeff', headTs = '1750000000') =>
   (/** @type {string[]} */ args) => {
     if (args.includes('rev-parse')) return headHash;
-    if (args.includes('log'))       return headTs;
-    return tagOutput;
+    if (args.includes('%ct'))       return headTs;   // timestamp-only log format
+    return tagOutput;                                // tag list + commit-message log
   };
 
 // ----------------------------------------------------------
@@ -139,6 +139,32 @@ assert.strictEqual(computeNextTag('bindings/go/oci', 'major', mockGit('bindings/
 assert.strictEqual(computeNextTag('bindings/go/ctf', 'patch', mockGit('bindings/go/ctf/v0.4.1\nbindings/go/ctf/v0.4.0')), 'bindings/go/ctf/v0.4.2');
 // Previously pseudo-versioned → next release bumps to v0.0.1
 assert.strictEqual(computeNextTag('bindings/go/cel', 'patch', mockGit('bindings/go/cel/v0.0.0-20260101000000-abc123def456')), 'bindings/go/cel/v0.0.1');
+
+// ----------------------------------------------------------
+// detectBump
+// ----------------------------------------------------------
+console.log('Testing detectBump...');
+
+// No last tag → always patch (module uses pseudo-version, bump kind irrelevant)
+assert.strictEqual(detectBump('bindings/go/cel', null, () => ''), 'patch');
+
+// Normal commits → patch
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', mockGit('fix: correct nil pointer\nchore: tidy deps')), 'patch');
+
+// Conventional Commit type!: subject → minor
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', mockGit('feat!: remove deprecated API')), 'minor');
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', mockGit('fix!: change error type')),   'minor');
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', mockGit('chore!: drop Go 1.21')),     'minor');
+
+// BREAKING CHANGE footer → minor
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', mockGit('feat: new thing\n\nBREAKING CHANGE: old API removed')), 'minor');
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', mockGit('BREAKING-CHANGE: behaviour changed')), 'minor');
+
+// Case-insensitive
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', mockGit('breaking change: something')), 'minor');
+
+// git error → safe fallback to patch
+assert.strictEqual(detectBump('bindings/go/oci', 'bindings/go/oci/v0.0.46', () => { throw new Error(); }), 'patch');
 
 // ----------------------------------------------------------
 // pinsFor
