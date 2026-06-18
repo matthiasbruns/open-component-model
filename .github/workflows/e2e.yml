@@ -67,7 +67,6 @@ jobs:
             .env
             website/static/install.sh
             go.work
-            go.work.sum
           persist-credentials: false
 
       - name: Setup Go
@@ -75,6 +74,12 @@ jobs:
         with:
           go-version-file: go.work
           cache-dependency-path: ${{ env.LOCATION }}/go.sum
+
+      - name: Scope workspace to checked-out modules
+        run: |
+          rm go.work
+          go work init
+          find . -name go.mod -exec dirname {} \; | xargs go work use
 
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
