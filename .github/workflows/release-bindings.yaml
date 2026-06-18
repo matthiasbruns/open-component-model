@@ -282,8 +282,8 @@ jobs:
     steps:
       - name: Generate App Token
         id: token
-        # Skipped on forks / when secrets are absent — falls back to github.token below.
-        if: ${{ secrets.OCMBOT_APP_ID != '' }}
+        # continue-on-error so forks without bot secrets fall back to github.token below.
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.OCMBOT_APP_ID }}
@@ -305,8 +305,9 @@ jobs:
           git config --global user.email "$GIT_USER@users.noreply.github.com"
 
       - name: Import GPG key
-        # Skipped on forks / when secrets are absent — signing only required for real releases.
-        if: ${{ secrets.GPG_PRIVATE_KEY_FOR_SIGNING != '' }}
+        # continue-on-error so forks without GPG secrets skip signing gracefully.
+        # The commit step is already guarded by !inputs.dry_run so this is safe.
+        continue-on-error: true
         uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY_FOR_SIGNING }}
