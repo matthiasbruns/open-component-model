@@ -146,6 +146,24 @@ jobs:
             await script.determineLatestRelease({ core, github, context });
   # === release-candidate-version.yml ===
 
+  # Releases all changed binding modules in topological order, then pins the
+  # resulting binding versions into cli/go.mod and kubernetes/controller/go.mod.
+  # This must complete before tag_rc so the RC tag points at a commit that has
+  # correct go.mod files for both bindings and their consumers.
+  release_bindings:
+    name: Release Binding Modules
+    needs: [prepare]
+    if: ${{ github.event.inputs.dry_run == 'false' }}
+    uses: ./.github/workflows/release-bindings.yaml
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      bump: patch
+      dry_run: false
+      consumers_json: '["cli","kubernetes/controller"]'
+    secrets: inherit
+
   # === Copied from controller-release.yml::tag_rc ===
   # Changes vs the original:
   #   calls `createRcTags` (plural) instead of `createRcTag`
@@ -157,7 +175,7 @@ jobs:
     environment:
       name: automation
       deployment: false
-    needs: [prepare]
+    needs: [prepare, release_bindings]
     if: ${{ github.event.inputs.dry_run == 'false' }}
     permissions:
       contents: write

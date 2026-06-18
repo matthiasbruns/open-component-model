@@ -27,6 +27,10 @@ on:
       dry_run:
         type: boolean
         default: false
+      consumers_json:
+        description: "JSON array of module paths (relative to repo root) whose go.mod files should be pinned to the newly released binding versions. Defaults to cli and controller."
+        type: string
+        default: '["cli","kubernetes/controller"]'
     outputs:
       tags_json:
         description: "JSON object mapping binding module paths to their new tags"
@@ -124,6 +128,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           ORDERED_JSON: ${{ steps.graph.outputs.ordered_json }}
+          CONSUMERS_JSON: ${{ inputs.consumers_json || '["cli","kubernetes/controller"]' }}
           TAGS_JSON: ${{ steps.plan.outputs.tags_json }}
         with:
           script: |
