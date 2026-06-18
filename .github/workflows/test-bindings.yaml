@@ -37,12 +37,6 @@ jobs:
       matrix:
         module: ${{ fromJSON(inputs.unit_modules_json) }}
     steps:
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -64,6 +58,9 @@ jobs:
             ${{ github.workspace }}/${{ matrix.module }}/go.sum
             ${{ github.workspace }}/go.work.sum
 
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@latest
+
       - name: Run unit tests
         env:
           MODULE: ${{ matrix.module }}
@@ -81,12 +78,6 @@ jobs:
     env:
       TESTCONTAINER_DOCKER_NETWORK: integration-testcontainers
     steps:
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -97,6 +88,9 @@ jobs:
         with:
           go-version-file: go.work
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
+
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@latest
 
       - name: Create Docker network for Testcontainers
         run: docker network create ${{ env.TESTCONTAINER_DOCKER_NETWORK }}
