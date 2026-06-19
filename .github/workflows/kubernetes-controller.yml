@@ -104,7 +104,6 @@ jobs:
             ${{ env.LOCATION }}
             Taskfile.yml
             .env
-            go.work
           persist-credentials: false
           ref: ${{ env.REF }}
 

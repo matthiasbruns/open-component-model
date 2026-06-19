@@ -67,7 +67,6 @@ jobs:
             .github/scripts
             ${{ env.LOCATION }}
             bindings/
-            go.work
           persist-credentials: 'false'  # Disable automatic token persistence
           ref: ${{ env.REF }}
 
@@ -77,17 +76,14 @@ jobs:
           go-version-file: go.work
           cache-dependency-path: cli/go.sum  # Cache dependencies by go.sum
 
-      - name: Scope workspace to checked-out modules
-        run: |
-          rm go.work
-          go work init
-          find . -name go.mod -exec dirname {} \; | xargs go work use
-
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           version: 3.x
+
+      - name: Init workspace
+        run: rm go.work && task init/go.work
 
       # Setup Docker Buildx for multi-arch and advanced image building
       - name: Setup docker/buildx

@@ -65,7 +65,6 @@ jobs:
             Taskfile.yml
             .env
             website/static/install.sh
-            go.work
           persist-credentials: false
 
       - name: Setup Go

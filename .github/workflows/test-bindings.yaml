@@ -43,11 +43,6 @@ jobs:
         with:
           sparse-checkout: |
             bindings/
-            cli/
-            kubernetes/controller/
-            conformance/scenarios/sovereign/components/notes/
-            go.work
-            go.work.sum
             reuse.Taskfile.yml
           persist-credentials: false
 
@@ -55,12 +50,13 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: go.work
-          cache-dependency-path: |
-            ${{ github.workspace }}/${{ matrix.module }}/go.sum
-            ${{ github.workspace }}/go.work.sum
+          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
       - name: Install Task
         run: go install github.com/go-task/task/v3/cmd/task@latest
+
+      - name: Init workspace
+        run: rm go.work && task init/go.work
 
       - name: Run unit tests
         env:
