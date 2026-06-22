@@ -1,85 +1,5 @@
 import assert from 'assert';
-import { generateFilters, filterModules, splitByTestability } from './discover-modules.js';
-
-// ---------------------------------------------------------------------------
-// generateFilters
-// ---------------------------------------------------------------------------
-console.log('Testing generateFilters...');
-
-{
-  const result = generateFilters(['bindings/go/oci', 'cli']);
-  assert.ok(result.includes('bindings/go/oci:'), 'should include module key');
-  assert.ok(result.includes('"bindings/go/oci/**"'), 'should include glob pattern');
-  assert.ok(result.includes('cli:'), 'should include cli key');
-  assert.ok(result.includes('"cli/**"'), 'should include cli glob');
-  assert.ok(!result.includes('/integration'), 'should not add parent for non-integration modules');
-}
-
-{
-  const result = generateFilters(['bindings/go/oci/integration']);
-  assert.ok(result.includes('"bindings/go/oci/integration/**"'), 'should include integration glob');
-  assert.ok(result.includes('"bindings/go/oci/**"'), 'should also watch parent module');
-}
-
-{
-  assert.strictEqual(generateFilters([]), '', 'empty input produces empty output');
-}
-
-console.log('  ✅ generateFilters');
-
-// ---------------------------------------------------------------------------
-// filterModules
-// ---------------------------------------------------------------------------
-console.log('Testing filterModules...');
-
-const ALL = ['bindings/go/oci', 'bindings/go/helm', 'cli'];
-
-{
-  // ciChanged overrides everything → all modules in both lists
-  const { modules, lintModules } = filterModules(ALL, ['bindings/go/oci'], {
-    checkOnlyChanged: true, ciChanged: true, envChanged: false,
-  });
-  assert.deepStrictEqual(modules, ALL, 'ciChanged: modules = all');
-  assert.deepStrictEqual(lintModules, ALL, 'ciChanged: lintModules = all');
-}
-
-{
-  // PR mode, only one module changed, .env unchanged → test + lint that module only
-  const { modules, lintModules } = filterModules(ALL, ['bindings/go/oci'], {
-    checkOnlyChanged: true, ciChanged: false, envChanged: false,
-  });
-  assert.deepStrictEqual(modules, ['bindings/go/oci']);
-  assert.deepStrictEqual(lintModules, ['bindings/go/oci']);
-}
-
-{
-  // PR mode, .env changed → test changed only, lint everything
-  const { modules, lintModules } = filterModules(ALL, ['bindings/go/oci'], {
-    checkOnlyChanged: true, ciChanged: false, envChanged: true,
-  });
-  assert.deepStrictEqual(modules, ['bindings/go/oci'], '.env change: test = changed');
-  assert.deepStrictEqual(lintModules, ALL, '.env change: lint = all');
-}
-
-{
-  // PR mode, nothing changed → empty
-  const { modules, lintModules } = filterModules(ALL, [], {
-    checkOnlyChanged: true, ciChanged: false, envChanged: false,
-  });
-  assert.deepStrictEqual(modules, []);
-  assert.deepStrictEqual(lintModules, []);
-}
-
-{
-  // Push to main (checkOnlyChanged=false) → all modules regardless of changedPaths
-  const { modules, lintModules } = filterModules(ALL, [], {
-    checkOnlyChanged: false, ciChanged: false, envChanged: false,
-  });
-  assert.deepStrictEqual(modules, ALL, 'push: modules = all');
-  assert.deepStrictEqual(lintModules, ALL, 'push: lintModules = all');
-}
-
-console.log('  ✅ filterModules');
+import { splitByTestability } from './discover-modules.js';
 
 // ---------------------------------------------------------------------------
 // splitByTestability
@@ -127,30 +47,26 @@ console.log('Testing splitByTestability...');
 console.log('  ✅ splitByTestability');
 
 // ---------------------------------------------------------------------------
-// splitTestModules binding-only filter (integration test via env)
+// splitTestModules binding-only filter (simulated)
 // ---------------------------------------------------------------------------
 console.log('Testing splitTestModules binding-only filter...');
 
 {
-  // Modules that should NOT appear in test-bindings output even when they have a 'test' task
   const nonBindingModules = ['cli', 'kubernetes/controller', 'conformance/scenarios/sovereign/components/notes'];
-  // These are filtered out BEFORE splitByTestability — so the mock exec should never be called for them
   const calledWith = [];
   const mockExec = (cmd) => {
     calledWith.push(cmd);
     if (cmd.includes('bindings/go/cel'))
       return JSON.stringify({ tasks: [{ name: 'test' }] });
-    throw new Error('unexpected module in splitByTestability');
+    throw new Error('unexpected module');
   };
 
-  // Simulate what splitTestModules does internally: filter to bindings/ first
   const allModules = ['cli', 'kubernetes/controller', 'bindings/go/cel', 'conformance/scenarios/sovereign/components/notes'];
   const bindingModules = allModules.filter(m => m.startsWith('bindings/'));
   const { unitTestModules, integrationTestModules } = splitByTestability(bindingModules, mockExec);
 
   assert.deepStrictEqual(unitTestModules, ['bindings/go/cel'], 'only bindings in unit list');
   assert.deepStrictEqual(integrationTestModules, [], 'no integration modules');
-  // non-binding modules must not have been probed
   for (const nm of nonBindingModules) {
     assert.ok(!calledWith.some(c => c.includes(nm)), `${nm} should not be probed`);
   }

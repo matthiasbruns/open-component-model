@@ -25,6 +25,7 @@ on:
       - 'cli/**'
       - 'kubernetes/controller/**'
       - 'conformance/**'
+      - 'bindings/**'
       - '.github/workflows/cli.yml'
       - '.github/workflows/kubernetes-controller.yml'
       - '.github/workflows/conformance.yml'
