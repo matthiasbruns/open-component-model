@@ -107,9 +107,13 @@ export async function filterChanged({ core }) {
  * Step: Filter based on Testability
  * Reads env: MODULES_JSON
  * Outputs: unit_test_modules_json, integration_test_modules_json
+ *
+ * Only binding modules are tested here — cli, kubernetes/controller, and other
+ * top-level modules have dedicated CI workflows and must not appear in this matrix.
  */
 export async function splitTestModules({ core, execSyncFn = _execSync }) {
-  const modules = JSON.parse(process.env.MODULES_JSON || '[]');
+  const allModules = JSON.parse(process.env.MODULES_JSON || '[]');
+  const modules = allModules.filter(m => m.startsWith('bindings/'));
   const { unitTestModules, integrationTestModules } = splitByTestability(modules, execSyncFn);
   core.setOutput('unit_test_modules_json', JSON.stringify(unitTestModules));
   core.setOutput('integration_test_modules_json', JSON.stringify(integrationTestModules));

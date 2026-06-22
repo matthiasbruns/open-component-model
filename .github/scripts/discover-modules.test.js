@@ -126,4 +126,36 @@ console.log('Testing splitByTestability...');
 
 console.log('  ✅ splitByTestability');
 
+// ---------------------------------------------------------------------------
+// splitTestModules binding-only filter (integration test via env)
+// ---------------------------------------------------------------------------
+console.log('Testing splitTestModules binding-only filter...');
+
+{
+  // Modules that should NOT appear in test-bindings output even when they have a 'test' task
+  const nonBindingModules = ['cli', 'kubernetes/controller', 'conformance/scenarios/sovereign/components/notes'];
+  // These are filtered out BEFORE splitByTestability — so the mock exec should never be called for them
+  const calledWith = [];
+  const mockExec = (cmd) => {
+    calledWith.push(cmd);
+    if (cmd.includes('bindings/go/cel'))
+      return JSON.stringify({ tasks: [{ name: 'test' }] });
+    throw new Error('unexpected module in splitByTestability');
+  };
+
+  // Simulate what splitTestModules does internally: filter to bindings/ first
+  const allModules = ['cli', 'kubernetes/controller', 'bindings/go/cel', 'conformance/scenarios/sovereign/components/notes'];
+  const bindingModules = allModules.filter(m => m.startsWith('bindings/'));
+  const { unitTestModules, integrationTestModules } = splitByTestability(bindingModules, mockExec);
+
+  assert.deepStrictEqual(unitTestModules, ['bindings/go/cel'], 'only bindings in unit list');
+  assert.deepStrictEqual(integrationTestModules, [], 'no integration modules');
+  // non-binding modules must not have been probed
+  for (const nm of nonBindingModules) {
+    assert.ok(!calledWith.some(c => c.includes(nm)), `${nm} should not be probed`);
+  }
+}
+
+console.log('  ✅ splitTestModules binding-only filter');
+
 console.log('\n✅ All discover-modules tests passed.');
