@@ -201,11 +201,11 @@ module, and compilation would fail or silently use stale cached builds of its de
 
 | Job                           | Sparse checkout                             | Workspace                          |
 |-------------------------------|---------------------------------------------|------------------------------------|
-| `golangci_lint` per module    | `${{ matrix.module }} + bindings/ + config` | `rm go.work && task init/go.work`  |
-| `kubernetes-controller` build | `kubernetes/controller/ + config`           | `rm go.work` (no workspace needed) |
-| `e2e`, `conformance`          | module-specific + config                    | `rm go.work` (no workspace needed) |
-| `test-bindings` unit          | `bindings/`                                 | `rm go.work && task init/go.work`  |
-| `test-bindings` integration   | full checkout                               | `rm go.work && task init/go.work`  |
+| `golangci_lint` per module    | `${{ matrix.module }} + bindings/ + config`    | `rm go.work && task init/go.work`  |
+| `kubernetes-controller` build | `kubernetes/controller/ + bindings/ + config`  | `rm go.work && task init/go.work`  |
+| `e2e`, `conformance`          | module-specific + config                       | `rm go.work` (no workspace needed) |
+| `test-bindings` unit          | `bindings/`                                    | `rm go.work && task init/go.work`  |
+| `test-bindings` integration   | full checkout                                  | `rm go.work && task init/go.work`  |
 
 ---
 
