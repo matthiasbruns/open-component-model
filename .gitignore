@@ -40,6 +40,10 @@ output/
 # github action node modules
 .github/scripts/node_modules/
 
+# Go workspace — generated locally and in CI via `task init/go.work`
+go.work
+go.work.sum
+
 # Task files and generation with tmp folders
 **/tmp
 **/.task
