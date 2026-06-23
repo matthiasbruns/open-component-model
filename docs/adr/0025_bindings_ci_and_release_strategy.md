@@ -64,8 +64,8 @@ Four concrete problems had to be solved:
 
 ### Structural direction
 
-* **Keep Go modules, improve tooling**: retain independent `go.mod` per binding, but commit `go.work` and fix CI to
-  use it. Reduces PR friction without changing the module boundary model.
+* **Keep Go modules, improve tooling**: retain independent `go.mod` per binding; add `go.work` (gitignored,
+  generated in CI) and fix CI to use it. Reduces PR friction without changing the module boundary model.
 * **Ditch Go modules, shared library**: remove per-binding `go.mod` files; fold all bindings into a single shared
   library consumed directly by `cli` and `kubernetes/controller`. Eliminates the boundary model entirely.
 
@@ -77,7 +77,7 @@ Four concrete problems had to be solved:
 ### Sparse-checkout strategy
 
 * **Keep sparse-checkout**: each CI job checks out only what it needs (e.g., `bindings/` for unit tests, one module + `bindings/` for lint). Requires `rm go.work && task init/go.work` after checkout to produce a scoped workspace matching the checked-out tree.
-* **Full checkout everywhere**: every CI job checks out the entire repository. The committed `go.work` is always correct and no workspace override is needed.
+* **Full checkout everywhere**: every CI job checks out the entire repository. `task init/go.work` always produces a correct workspace since the full tree is present; no sparse-checkout scoping is needed.
 
 ### Release strategy
 
@@ -94,8 +94,8 @@ open decision (see *Pros and Cons* below).
 
 **Why keep Go modules over a shared library:** Ditching Go modules would eliminate independent versioning, making it
 impossible for external consumers to take only the bindings they need at a specific version. The binding boundary model
-has value; the friction was in the tooling around it, not in the model itself. Committing `go.work` and fixing CI to
-use it recovers most of the developer-experience benefit without sacrificing the boundary model.
+has value; the friction was in the tooling around it, not in the model itself. Adding `go.work` (gitignored, generated
+in CI from the checked-out tree) recovers the developer-experience benefit without sacrificing the boundary model.
 
 **Why always test all bindings over change-based filtering:** Bindings are interdependent via `go.work`. Testing only
 changed modules misses the case where an API change in module A silently breaks module B (not touched in the PR). The
@@ -135,8 +135,10 @@ escape hatch for genuine single-module hotfixes with no consumers to update.
 
 * **Pros:** Always catches cross-module regressions; zero-config enrollment for new bindings; `discover_modules` is two
   steps (discover + split by testability) with no filtering logic.
-* **Cons:** All binding tests run on every PR, including PRs that touch only docs or conformance. Acceptable given
-  binding tests are fast unit tests.
+* **Cons:** All binding tests run on every PR, including PRs that touch only docs or conformance. Some modules
+  in the unit matrix make live network calls (Helm repo fetches, OCI registry calls) and are not strictly fast;
+  these should be moved to the `/integration` sub-module. Docs-only PRs running the full matrix is a known
+  cost; `paths-ignore` filtering is a deferred improvement (see *Known Limitations*).
 
 **Change-based filtering (not selected)**
 
@@ -146,14 +148,14 @@ escape hatch for genuine single-module hotfixes with no consumers to update.
 
 ### Sparse-checkout strategy
 
-**Keep sparse-checkout (current state, decision open)**
+**Keep sparse-checkout + gitignore go.work (selected)**
 
-* **Pros:** Each job downloads only what it needs. Clearly worthwhile for `golangci_lint` (35 parallel jobs, each scoped to one module + `bindings/`) and for controller/e2e/conformance jobs (avoid pulling all binding source for builds that don't need it).
-* **Cons:** Requires `rm go.work && task init/go.work` after every sparse checkout to produce a workspace that matches the checked-out tree. The committed `go.work` references all 35 modules; without the override, Go tooling fails on missing paths.
+* **Pros:** Each job downloads only what it needs. Clearly worthwhile for `golangci_lint` (35 parallel jobs, each scoped to one module + `bindings/`) and for controller/e2e/conformance jobs (avoid pulling all binding source for builds that don't need it). `go.work` is not committed — it is generated in CI via `task init/go.work` after checkout, producing a workspace scoped to the checked-out tree automatically.
+* **Cons:** Every CI job must run `task init/go.work` before Go tooling; requires `arduino/setup-task` (or equivalent) before `setup-go`. The authoritative Go version is stored in `.go-version` rather than `go.work`.
 
-**Full checkout everywhere (open alternative)**
+**Full checkout everywhere (not selected)**
 
-* **Pros:** The committed `go.work` is always correct; no workspace override needed anywhere. Simpler, fewer moving parts, easier to reason about.
+* **Pros:** Simpler; fewer moving parts; easier to reason about.
 * **Cons:** Every job downloads the full repository. For jobs that only need `bindings/`, this pulls in `cli/`, `kubernetes/controller/`, `website/`, `conformance/` source unnecessarily. For the `golangci_lint` matrix (35 parallel jobs), this overhead multiplies.
 
 ### Release strategy
@@ -172,24 +174,23 @@ escape hatch for genuine single-module hotfixes with no consumers to update.
 
 ## Sparse-Checkout and go.work Management
 
-### Why go.work is always present in CI
+### Why go.work is not committed
 
-Git sparse-checkout always includes root-level files unconditionally. `go.work` lives at the repo root and cannot be
-excluded from any sparse checkout. Since `go.work` declares a Go version (`go 1.26.4`) that may differ from individual
-`go.mod` files (`go 1.26.3`), any job that uses `go-version-file: <module>/go.mod` installs the wrong version and fails
-because `go.work` requires a higher one.
+`go.work` is listed in `.gitignore` and generated in CI via `task init/go.work`. This avoids the problem of a committed
+`go.work` referencing all 35 modules while a sparse checkout only has a subset — Go tooling would fail on missing paths.
+By generating `go.work` after checkout, the workspace is automatically scoped to the checked-out tree.
 
-**Resolution:** Use `go-version-file: go.work` everywhere (correct Go version), then override the workspace immediately
-after checkout:
+The authoritative Go version is stored in `.go-version` (repo root). All CI jobs use `go-version-file: .go-version` for
+`actions/setup-go`, then run `task init/go.work` to produce the workspace. The task uses `status: find go.work` to skip
+re-generation if the file already exists, but since the file is gitignored it will never be present after a fresh checkout.
+
+**CI step order for jobs that need a workspace:**
 
 ```sh
-rm go.work && task init/go.work
+# 1. Install Task (arduino/setup-task — no Go dependency)
+# 2. setup-go with go-version-file: .go-version
+# 3. task init/go.work  (go work init + go work use for all checked-out go.mod files)
 ```
-
-`task init/go.work` uses `status: find go.work` and is a no-op if `go.work` already exists, so the `rm` step is
-required to force it to run. The task then runs `go work init` + `go work use` for every `go.mod` found in the
-checked-out tree, producing a scoped workspace that only references the modules actually present. Module-specific jobs
-automatically get a correct workspace without manually listing modules.
 
 ### Why all binding source must be checked out together
 
@@ -199,13 +200,13 @@ module, and compilation would fail or silently use stale cached builds of its de
 
 ### Where sparse-checkout is still used
 
-| Job                           | Sparse checkout                             | Workspace                          |
-|-------------------------------|---------------------------------------------|------------------------------------|
-| `golangci_lint` per module    | `${{ matrix.module }} + bindings/ + config`    | `rm go.work && task init/go.work`  |
-| `kubernetes-controller` build | `kubernetes/controller/ + bindings/ + config`  | `rm go.work && task init/go.work`  |
-| `e2e`, `conformance`          | module-specific + config                       | `rm go.work` (no workspace needed) |
-| `test-bindings` unit          | `bindings/`                                    | `rm go.work && task init/go.work`  |
-| `test-bindings` integration   | full checkout                                  | `rm go.work && task init/go.work`  |
+| Job                           | Sparse checkout                             | Workspace                    |
+|-------------------------------|---------------------------------------------|------------------------------|
+| `golangci_lint` per module    | `${{ matrix.module }} + bindings/ + config`    | `task init/go.work`          |
+| `kubernetes-controller` build | `kubernetes/controller/ + bindings/ + config`  | `task init/go.work`          |
+| `e2e`, `conformance`          | module-specific + config                       | none (no workspace needed)   |
+| `test-bindings` unit          | `bindings/`                                    | `task init/go.work`          |
+| `test-bindings` integration   | full checkout                                  | `task init/go.work`          |
 
 ---
 
@@ -268,11 +269,68 @@ consumers.
 
 ---
 
+## Known Limitations and Open Items
+
+The following gaps were identified during implementation and adversarial review. Items marked **deferred** are
+tracked as follow-up work; items marked **in-progress** have a fix ready but not yet merged.
+
+### Release pipeline (`release-bindings.js`)
+
+* **Version bump misclassification (known risk):** `detectBump` scans commit subjects and bodies for
+  `feat!:` / `BREAKING CHANGE`. A breaking API change committed as `fix:` or `refactor:` produces a silent
+  patch bump. The human gate shows a plausible plan and cannot detect this. Gate reviewers must verify the bump
+  kind against semantic content, not just commit subjects. A `bump_override` workflow input is a deferred
+  improvement.
+
+* **`GOPROXY=direct` race window (deferred fix):** For untagged modules, `pinDeps` runs
+  `GOPROXY=direct go get <module>@<headCommit>`. If the commit has not yet propagated to the VCS CDN,
+  or if `go mod tidy` runs before the pseudo-version appears in the proxy cache, the step fails. A retry loop
+  (3×, 10 s backoff) around these calls is the planned fix.
+
+* **`pinDeps` not idempotent (deferred fix):** If `pinDeps` fails partway through, re-running the workflow
+  re-processes already-pinned modules. This is harmless in the common case but can produce a different result
+  from a clean run if a partial state conflicts. A pre-check to skip already-pinned modules is the planned fix.
+
+* **Pseudo-versions are unretractable (design constraint):** Once a dependent's `go.mod` is tagged with a
+  commit pseudo-version (`v0.0.0-<ts>-<sha>`), Go's `retract` directive cannot remove it. Recovery requires a
+  full new release of the dependent. This is inherent to the "untagged module pinned by commit" design and is
+  the motivation for bootstrapping new modules with a `v0.0.1` tag before their first bulk release.
+
+* **New binding bootstrap gap (deferred):** `planRelease` never emits a first semver tag for a module with no
+  existing tag — it falls through to commit-pinned pseudo-version. New bindings should be manually tagged
+  (`bindings/go/newbinding/v0.0.1`) before their first bulk release, or a bootstrap path should be added to
+  `planRelease`. See [appendix §3a](0025_appendix_approach_analysis.md#3a-can-we-add-a-new-binding-and-use-it-in-the-same-pr).
+
+### CI
+
+* **Stale `go.work` on self-hosted runners (deferred fix):** `task init/go.work` skips generation if `go.work`
+  exists (`status: find go.work`). On reused self-hosted runners, a stale file from a previous checkout causes
+  Go tooling to resolve against the wrong module graph silently. Fix: prefix all CI `task init/go.work` calls
+  with `rm -f go.work go.work.sum`.
+
+* **Flaky integration tests block unrelated PRs (deferred):** `check-completion` blocks merge on any failure in
+  `run_tests`. A flaky testcontainer timeout in one binding blocks a PR that only touches another. Per-job
+  `timeout-minutes` and non-blocking integration status checks are the planned mitigation.
+
+* **Docs-only PRs run the full binding matrix (deferred):** `ci.yml` has no `paths-ignore` filter. A PR
+  touching only `docs/*.md` or `website/` runs the full 31-module lint and test matrix. Adding
+  `paths-ignore: ['docs/**', '*.md', 'website/**']` to the `pull_request` trigger is a planned improvement.
+
+* **Developer onboarding:** New contributors must run `task init/go.work` after cloning before their IDE
+  workspace resolves cross-module imports. This is documented in `bindings/go/CONTRIBUTING.md` but not yet
+  linked from the root `README.md`.
+
+For the full external-tooling comparison (opentelemetry `multimod`, Kubernetes release process) and detailed
+analysis of workflow questions (adding/renaming bindings), see
+[ADR-0025 Appendix](0025_appendix_approach_analysis.md).
+
+---
+
 ## Conclusion
 
 The chosen approach directly addresses each identified pain point:
 
-* **PR overhead**: committing `go.work` and overriding it in CI with a scoped workspace allows developers to make
+* **PR overhead**: `go.work` (generated in CI and locally via `task init/go.work`) allows developers to make
   cross-binding changes in a single PR. The workspace ensures all interdependent modules resolve against the current
   tree, not published versions, so a change spanning `bindings/go/core` and `bindings/go/helm` can be reviewed and
   merged together.

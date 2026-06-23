@@ -78,7 +78,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: go.work
+          go-version-file: .go-version
           cache: false
 
       - name: Setup Node.js
@@ -273,7 +273,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: go.work
+          go-version-file: .go-version
           cache: false
 
       - name: Setup Node.js
@@ -301,7 +301,7 @@ jobs:
       - name: Commit dependency pins
         if: ${{ !inputs.dry_run }}
         run: |
-          git add go.work.sum $(git diff --name-only -- '*/go.mod' '*/go.sum')
+          git diff --name-only -- '*/go.mod' '*/go.sum' | xargs --no-run-if-empty git add
           git diff --staged --quiet || git commit -S -s -m "chore(release): pin binding go.mod deps for release"
 
       - name: Publish tags

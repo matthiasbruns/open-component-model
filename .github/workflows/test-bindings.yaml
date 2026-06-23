@@ -46,17 +46,20 @@ jobs:
             reuse.Taskfile.yml
           persist-credentials: false
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: go.work
+          go-version-file: .go-version
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
-      - name: Install Task
-        run: go install github.com/go-task/task/v3/cmd/task@latest
-
       - name: Init workspace
-        run: rm go.work && task init/go.work
+        run: task init/go.work
 
       - name: Run unit tests
         env:
@@ -81,14 +84,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: go.work
+          go-version-file: .go-version
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
-      - name: Install Task
-        run: go install github.com/go-task/task/v3/cmd/task@latest
+      - name: Init workspace
+        run: task init/go.work
 
       - name: Create Docker network for Testcontainers
         run: docker network create ${{ env.TESTCONTAINER_DOCKER_NETWORK }}
