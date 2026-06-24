@@ -124,8 +124,7 @@ jobs:
     needs: [plan]
     uses: ./.github/workflows/test-bindings.yaml
     with:
-      unit_modules_json:        ${{ needs.plan.outputs.changed_modules_json }}
-      integration_modules_json: ${{ needs.plan.outputs.integration_modules_json }}
+integration_modules_json: ${{ needs.plan.outputs.integration_modules_json }}
 
   # ---------------------------------------------------------------------------
   # 3. Gate — human approval before any tags are created

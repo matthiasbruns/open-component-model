@@ -189,6 +189,15 @@ tasks:
     cmds:
       - go work edit -json | jq -r '.Use[].DiskPath' | xargs -I{} golangci-lint run --config={{.ROOT_DIR}}/golangci.yml --timeout=10m {}//...
 
+  bindings/test:
+    desc: "Run unit tests for all binding modules"
+    vars:
+      BINDING_MODULES:
+        sh: go work edit -json | jq -r '.Use[].DiskPath' | grep 'bindings/go' | grep -v '/integration'
+    cmds:
+      - for: { var: BINDING_MODULES }
+        cmd: 'cd {{.ROOT_DIR}}/{{.ITEM}} && go test ./...'
+
   tidy:
     desc: "Run go mod tidy on all Go modules in the project"
     cmds:
