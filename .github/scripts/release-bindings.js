@@ -374,7 +374,7 @@ export async function pinDeps({core}) {
         const deps = getDeps(mod);
         const semverPins = deps.filter(dep => taggedSet.has(dep));
         const commitPins = deps.filter(dep => !taggedSet.has(dep) && ordered.includes(dep)
-                                              && !latestTag(dep));
+            && !latestTag(dep));
 
         if (!semverPins.length && !commitPins.length) continue;
 
