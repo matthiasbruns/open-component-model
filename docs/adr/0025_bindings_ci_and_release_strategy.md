@@ -243,6 +243,43 @@ is to avoid manual releases after a release branch is cut and coordinate with th
 This ensures dependency order is respected, `go.mod` files in dependent bindings are updated atomically in the same
 release commit, and consumers are pinned in the same operation, closing the consistency window.
 
+### go.work in the release build
+
+`go.work` is used throughout — PR CI, the release build, and everything in between. The release build (`cli.yml`,
+`kubernetes-controller.yml`) checks out `bindings/` at the RC tag ref and runs `task init/go.work`, so the build
+resolves bindings from the local tree, not from the module proxy. The `go.mod` pins written by `pinDeps` are never
+exercised during the release build itself.
+
+The pins serve a different audience: **external consumers** who `go get` `cli` or `controller` outside the monorepo.
+They have no `go.work`, so Go falls through to `go.mod`, which must reference the correct binding versions for the
+module proxy to assemble the right dependency graph.
+
+The build and the pins are consistent because they both point to the same commit: `release-bindings.yaml` pushes the
+pin commit, `tag_rc` creates the RC tag at that commit, and the release build checks out at that tag. `go.work` and
+`go.mod` resolve to identical code; they just serve different consumers.
+
+```mermaid
+sequenceDiagram
+    participant RB as release-bindings.yaml
+    participant RC as tag_rc
+    participant Build as cli.yml / controller.yml
+    participant Proxy as module proxy
+    participant Ext as external consumer
+
+    RB->>RB: pinDeps — go mod edit in bindings (topo order) + cli + controller
+    RB->>RB: git commit -S -s (pin commit) + push binding semver tags
+    RC->>RC: checkout branch HEAD (= pin commit)
+    RC->>RC: create RC tag at pin commit
+    Build->>Build: checkout cli/ + bindings/ at RC tag
+    Build->>Build: task init/go.work
+    Build->>Build: compile (go.work → local bindings/ tree, go.mod pins ignored)
+
+    Ext->>Proxy: go get cli@v0.5.0
+    Proxy->>Proxy: read cli/go.mod at cli/v0.5.0 tag
+    Proxy->>Proxy: fetch binding deps at pinned semver versions
+    Proxy-->>Ext: consistent dependency graph
+```
+
 ---
 
 ## Implementation
