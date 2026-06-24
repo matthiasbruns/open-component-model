@@ -18,6 +18,11 @@ on:
         description: "Version to embed in binary (overrides computed version for ldflags only). Leading 'v' is stripped."
         type: string
         required: false
+      validate_pins:
+        description: "Build with GOWORK=off to validate go.mod pins match the workspace (release builds only)."
+        type: boolean
+        required: false
+        default: false
     outputs:
       artifact_name:
         description: "The artifact name that was built."
@@ -83,6 +88,7 @@ jobs:
           cache-dependency-path: cli/go.sum  # Cache dependencies by go.sum
 
       - name: Init workspace
+        if: ${{ !inputs.validate_pins }}
         run: task init/go.work
 
       # Setup Docker Buildx for multi-arch and advanced image building
@@ -110,6 +116,8 @@ jobs:
           task cli:generate/ctf VERSION="${VERSION}" BUILD_VERSION="${BUILD_VERSION}"
           task cli:verify/ctf
         env:
+          GOWORK: ${{ inputs.validate_pins && 'off' || '' }}
+          GOPROXY: ${{ inputs.validate_pins && 'direct' || '' }}
           BUILD_VERSION_OVERRIDE: ${{ inputs.build_version }}
 
       # Attest built binaries with provenance metadata, but only if we're not on a PR

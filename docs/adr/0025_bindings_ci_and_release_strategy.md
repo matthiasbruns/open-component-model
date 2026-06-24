@@ -262,18 +262,19 @@ release commit, and consumers are pinned in the same operation, closing the cons
 
 ### go.work in the release build
 
-`go.work` is used throughout — PR CI, the release build, and everything in between. The release build (`cli.yml`,
-`kubernetes-controller.yml`) checks out `bindings/` at the RC tag ref and runs `task init/go.work`, so the build
-resolves bindings from the local tree, not from the module proxy. The `go.mod` pins written by `pinDeps` are never
-exercised during the release build itself.
+PR and CI builds use `go.work` throughout so that in-flight binding changes resolve against the local tree without
+requiring published tags.
+
+Release builds (`cli.yml`, `kubernetes-controller.yml` called from `release.yml`) run with `GOWORK=off` and
+`GOPROXY=direct`. By the time these builds run, `release-bindings.yaml` has already pushed all binding semver tags
+and committed the `go.mod` pins. Disabling the workspace forces the build to resolve dependencies exclusively from
+those pins — exactly the dependency graph external consumers will get via `go get`. This validates that the pins
+are correct and catches any MVS or graph-pruning divergence between workspace and standalone resolution before the
+RC tag is created.
 
 The pins serve a different audience: **external consumers** who `go get` `cli` or `controller` outside the monorepo.
 They have no `go.work`, so Go falls through to `go.mod`, which must reference the correct binding versions for the
 module proxy to assemble the right dependency graph.
-
-The build and the pins are consistent because they both point to the same commit: `release-bindings.yaml` pushes the
-pin commit, `tag_rc` creates the RC tag at that commit, and the release build checks out at that tag. `go.work` and
-`go.mod` resolve to identical code; they just serve different consumers.
 
 ```mermaid
 sequenceDiagram
@@ -288,8 +289,7 @@ sequenceDiagram
     RC->>RC: checkout branch HEAD (= pin commit)
     RC->>RC: create RC tag at pin commit
     Build->>Build: checkout cli/ + bindings/ at RC tag
-    Build->>Build: task init/go.work
-    Build->>Build: compile (go.work → local bindings/ tree, go.mod pins ignored)
+    Build->>Build: compile (GOWORK=off, GOPROXY=direct → resolves go.mod pins directly)
 
     Ext->>Proxy: go get cli@v0.5.0
     Proxy->>Proxy: read cli/go.mod at cli/v0.5.0 tag
