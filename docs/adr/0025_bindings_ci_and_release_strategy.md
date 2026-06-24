@@ -333,10 +333,29 @@ tracked as follow-up work; items marked **in-progress** have a fix ready but not
   full new release of the dependent. This is inherent to the "untagged module pinned by commit" design and is
   the motivation for bootstrapping new modules with a `v0.0.1` tag before their first bulk release.
 
-* **New binding bootstrap gap (deferred):** `planRelease` never emits a first semver tag for a module with no
-  existing tag — it falls through to commit-pinned pseudo-version. New bindings should be manually tagged
-  (`bindings/go/newbinding/v0.0.1`) before their first bulk release, or a bootstrap path should be added to
-  `planRelease`.
+* **New binding bootstrap gap (deferred):** Adding a new binding and consuming it in the same PR works
+  correctly during development and CI — `task init/go.work` discovers the new `go.mod` automatically, and
+  any consumer (another binding, `cli`, `kubernetes/controller`) that adds a `require` for it resolves via
+  `go.work` against the local tree. The Go sentinel placeholder version
+  (`v0.0.0-00010101000000-000000000000`) is safe in `go.mod` while `go.work` is present.
+
+  The gap is at **release time**. `planRelease` finds no previous tag for the new binding, so
+  `computeNextTag` returns `null` and the module falls through to the `commitPins` path: `pinDeps` runs
+  `GOPROXY=direct go get <module>@<headCommit>`, replacing the sentinel with a real pseudo-version
+  (`v0.0.0-<ts>-<sha>`) in every dependent's `go.mod`. That pseudo-version then appears in the published
+  `go.mod` of all consumers (including `cli`), visible to external `go get` users.
+
+  This path **does work** — by the time a release runs the code is merged to the release branch, so the
+  commit is publicly accessible and `GOPROXY=direct` can resolve it. The `GOPROXY=direct` race window
+  (a transient timing risk documented above) applies, but is not a fundamental blocker. The real concerns
+  are cosmetic and long-term: external consumers see an opaque `v0.0.0-<ts>-<sha>` instead of a meaningful
+  semver, and the pseudo-version is permanently published and unretractable — recovery requires a full new
+  release of every dependent.
+
+  **Fix:** manually tag a new binding (`bindings/go/newbinding/v0.0.1`) before triggering the first bulk
+  release. With a tag present, `planRelease` takes the normal semver path, `pinDeps` uses
+  `go mod edit -require` instead of `go get @commit`, and no pseudo-version reaches a published `go.mod`.
+  A bootstrap path in `planRelease` (auto-assign `v0.0.1` for untagged modules) is a deferred improvement.
 
 ### CI
 
