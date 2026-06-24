@@ -7,10 +7,6 @@ name: Test Bindings
 on:
   workflow_call:
     inputs:
-      unit_modules_json:
-        description: "JSON array of binding module paths to unit-test"
-        type: string
-        required: true
       integration_modules_json:
         description: "JSON array of integration sub-module paths to test"
         type: string
@@ -29,21 +25,13 @@ permissions:
 
 jobs:
   unit:
-    name: "Unit / ${{ matrix.module }}"
-    if: ${{ inputs.unit_modules_json && inputs.unit_modules_json != '[]' }}
+    name: "Unit"
     runs-on: ubuntu-24.04-arm
-    strategy:
-      fail-fast: false
-      max-parallel: 5
-      matrix:
-        module: ${{ fromJSON(inputs.unit_modules_json) }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          sparse-checkout: |
-            bindings/
-            reuse.Taskfile.yml
+          sparse-checkout: bindings/
           persist-credentials: false
 
       - name: Install Task
@@ -56,15 +44,12 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: .go-version
-          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
       - name: Init workspace
         run: task init/go.work
 
       - name: Run unit tests
-        env:
-          MODULE: ${{ matrix.module }}
-        run: task "${MODULE}:test"
+        run: task bindings/test
 
   integration:
     name: "Integration / ${{ matrix.module }}"

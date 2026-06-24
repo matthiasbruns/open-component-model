@@ -139,12 +139,13 @@ escape hatch for genuine single-module hotfixes with no consumers to update.
 
 **Always test all bindings (selected)**
 
-* **Pros:** Always catches cross-module regressions. It has zero-config enrollment for new bindings. `discover_modules`
-  is two
-  steps (discover + split by testability) with no filtering logic. Docs-only PRs should not test the code at all.
-* **Cons:** All binding tests run on every PR, including PRs that touch only docs or conformance. Some modules
-  in the unit matrix make live network calls (Helm repo fetches, OCI registry calls) and are not strictly fast.
-  These could be moved to the `/integration` submodule.
+* **Pros:** Always catches cross-module regressions. Zero-config enrollment for new bindings — adding a module
+  under `bindings/go/` is sufficient. Unit tests run in a single job via `task bindings/test`
+  (`go test ./bindings/go/...`): one runner, one Go setup, shared build cache. Docs-only PRs are excluded
+  via `paths-ignore`.
+* **Cons:** All binding unit tests run on every code-touching PR. Integration tests run as a parallel matrix
+  because they are I/O-bound (testcontainers, live network calls) and `sigstore/integration` requires a
+  different runner architecture.
 
 **Change-based filtering (not selected)**
 
@@ -154,19 +155,22 @@ escape hatch for genuine single-module hotfixes with no consumers to update.
 
 ### Sparse-checkout strategy
 
-**Full checkout, single lint job (selected)**
+**Full checkout for lint and unit tests (selected)**
 
-* **Pros:** Simpler; fewer moving parts. `golangci-lint` runs once across all modules via `task lint` (which uses
-  `go work edit -json` to enumerate paths). One Go setup, one lint binary install, one runner. Controller/e2e/conformance
-  jobs use sparse-checkout where they already do, unaffected.
-* **Cons:** Every binding CI job downloads the full repository rather than just `bindings/`. Acceptable given that
-  the monorepo is not especially large and the simplicity gain outweighs the marginal checkout overhead.
+* **Pros:** `task lint` runs `golangci-lint` across all modules in one pass via `go work edit -json`.
+  `task bindings/test` runs `go test ./bindings/go/...` — one compiler invocation, shared build cache,
+  one runner. Integration tests run as a sparse-checkout matrix where parallelism genuinely helps
+  (I/O-bound, `sigstore/integration` needs a different runner). Sparse-checkout remains for
+  `kubernetes/controller` and `e2e`/`conformance` which have no reason to pull all of `bindings/`.
+* **Cons:** Lint and unit jobs download the full repository. Acceptable given the monorepo size and the
+  simplicity gained.
 
-**Per-module sparse-checkout matrix (not selected)**
+**Per-module matrix with sparse-checkout (not selected)**
 
-* **Pros:** Each lint job downloads only its module + `bindings/`.
-* **Cons:** 35 parallel jobs each paying for Go setup, lint binary install, and sparse-checkout machinery. The setup
-  overhead dominates the checkout savings. Running lint sequentially in one pass via `go.work` is faster overall.
+* **Pros:** Each job downloads only its module + `bindings/`.
+* **Cons:** Each GitHub Actions matrix job gets its own runner. With 20+ modules every job pays for OS boot,
+  checkout, Go install, and tool install independently. For fast operations like lint and unit tests the
+  per-runner setup cost dominates actual work time, making the matrix slower wall-clock than a single job.
 
 ### Release strategy
 
@@ -214,10 +218,10 @@ module, and compilation would fail or silently use stale cached builds of its de
 | Job                           | Sparse checkout                               | Workspace                  |
 |-------------------------------|-----------------------------------------------|----------------------------|
 | `golangci_lint`               | full checkout                                 | `task init/go.work`        |
-| `kubernetes-controller` build | `kubernetes/controller/ + bindings/ + config` | `task init/go.work`        |
-| `e2e`, `conformance`          | module-specific + config                      | none (no workspace needed) |
 | `test-bindings` unit          | `bindings/`                                   | `task init/go.work`        |
 | `test-bindings` integration   | full checkout                                 | `task init/go.work`        |
+| `kubernetes-controller` build | `kubernetes/controller/ + bindings/ + config` | `task init/go.work`        |
+| `e2e`, `conformance`          | module-specific + config                      | none (no workspace needed) |
 
 ---
 
@@ -312,14 +316,16 @@ commit so reviewers can bootstrap a binding before approving if they choose to.
 `ci.yml` runs a `discover_modules` pre-job on every push and PR:
 
 1. `task go_modules` enumerates all Go modules in the tree.
-2. Each binding's Taskfile is probed (`task -d <module> -aj`) for `test` and `test/integration` targets to split the
-   matrix.
-3. Outputs: `modules_json` (all modules, for `golangci_lint` matrix) and `unit_test_modules_json` /
-   `integration_test_modules_json` (binding subsets, for `test-bindings.yaml`).
+2. Each binding's Taskfile is probed for a `test/integration` target to build the integration matrix.
+3. Outputs: `modules_json` (all modules, for `golangci_lint`) and `integration_test_modules_json`
+   (bindings with an integration test target, for `test-bindings.yaml`).
 
-Non-binding modules (`cli`, `kubernetes/controller`, `conformance/scenarios/sovereign/components/notes`) are excluded
-from the binding test matrix since they have dedicated CI workflows. Adding a new binding under `bindings/go/` with a
-`test` task in its `Taskfile.yml` is sufficient to enroll it in CI.
+Lint (`task lint`) and unit tests (`task bindings/test`) run in single jobs with no discovery input —
+they operate across the full workspace. Integration tests use a matrix since each module is I/O-bound
+and `sigstore/integration` requires a different runner. Non-binding modules (`cli`, `kubernetes/controller`)
+are excluded and have dedicated workflows. Adding a new binding under `bindings/go/` automatically
+enrolls it in lint, unit tests, and — if it has a `test/integration` target — the integration matrix,
+with no config change required.
 
 ### Consumer trigger
 
