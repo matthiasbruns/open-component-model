@@ -103,11 +103,10 @@ impossible for external consumers to take only the bindings they need at a speci
 has value; the friction was in the tooling around it, not in the model itself. Adding `go.work` (gitignored, generated
 in CI from the checked-out tree) recovers the developer-experience benefit without sacrificing the boundary model.
 
-**Why always test all bindings over change-based filtering:** Bindings are interdependent via `go.work`. Testing only
-changed modules misses the case where an API change in module A silently breaks module B (not touched in the PR). The
-filtering logic to handle this correctly is complex and has multiple reachable gaps; every correctness gap discovered
-requires another exception rule. All binding source is already checked out in full (`bindings/`) during the unit test
-job, so testing all bindings costs only runner time, not checkout overhead.
+**Why always test all bindings over change-based filtering:** Unit tests for all bindings run as a single
+`go test ./bindings/go/...` invocation — one job, one runner, shared build cache. The cost is low enough
+that graph-aware change filtering adds complexity without meaningful benefit. Always testing everything
+also gives a stronger correctness guarantee with no filtering logic to maintain.
 
 **Why the phased bulk release over manual per-module releases:** A phased bulk release computes next tags in dependency
 order, runs tests, requires human review of the plan before any tags are pushed, and pins consumer `go.mod` files
