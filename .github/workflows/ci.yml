@@ -2,9 +2,13 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
+      - '**/*.md'
   push:
     branches:
-    - main
+      - main
 
 permissions:
   contents: read
