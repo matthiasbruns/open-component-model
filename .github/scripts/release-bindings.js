@@ -368,7 +368,7 @@ export async function pinDeps({core}) {
 
     // For each module (bindings in topo order, then consumers), pin the versions
     // of any internal deps that changed in this release run:
-    //   - semver-tagged deps: go mod edit -require (authoritative, no network fetch)
+    //   - semver-tagged deps: go mod edit -require (tag may not exist yet, no fetch)
     //   - untagged deps:      go get @commit (Go derives the pseudo-version)
     for (const mod of [...ordered, ...consumers]) {
         const deps = getDeps(mod);
