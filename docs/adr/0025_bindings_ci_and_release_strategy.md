@@ -336,7 +336,7 @@ tracked as follow-up work; items marked **in-progress** have a fix ready but not
 * **New binding bootstrap gap (deferred):** `planRelease` never emits a first semver tag for a module with no
   existing tag — it falls through to commit-pinned pseudo-version. New bindings should be manually tagged
   (`bindings/go/newbinding/v0.0.1`) before their first bulk release, or a bootstrap path should be added to
-  `planRelease`. See [appendix §3a](0025_appendix_approach_analysis.md#3a-can-we-add-a-new-binding-and-use-it-in-the-same-pr).
+  `planRelease`.
 
 ### CI
 
@@ -357,9 +357,30 @@ tracked as follow-up work; items marked **in-progress** have a fix ready but not
   workspace resolves cross-module imports. This is documented in `bindings/go/CONTRIBUTING.md` but not yet
   linked from the root `README.md`.
 
-For the full external-tooling comparison (opentelemetry `multimod`, Kubernetes release process) and detailed
-analysis of workflow questions (adding/renaming bindings), see
-[ADR-0025 Appendix](0025_appendix_approach_analysis.md).
+External tooling evaluated (OpenTelemetry `multimod`, Kubernetes release process) is summarised in
+*External Alternatives Evaluated* above.
+
+---
+
+## External Alternatives Evaluated
+
+Two established multi-module release toolchains were reviewed and rejected:
+
+**Kubernetes `publishing-bot`** mirrors staging modules to separate read-only repos via `git filter-branch`;
+dependency ordering is declared in a hand-maintained `rules.yaml` DAG per module. Not applicable: the
+separate-repo mirroring exists because Kubernetes module paths don't match their monorepo layout — institutional
+baggage irrelevant to us. Their manually maintained DAG is strictly worse than our auto-derived ordering from
+`go mod edit -json`.
+
+**OpenTelemetry `multimod` + `crosslink`** — `multimod` bumps versions from a declarative `versions.yaml` and
+rewrites `go.mod` files via regex; `crosslink` derives the topo-sort from `go.mod` parsing. Not adopted:
+regex `go.mod` rewriting mishandles edge cases silently; `versions.yaml` requires operator edits on every
+release; `multimod tag` is non-idempotent (open upstream bug). `crosslink`'s `go.mod`-derived topo-sort is
+exactly what `buildGraph` does — it confirms our approach is correct prior art. We use `go mod edit -json`
+(toolchain-authoritative) instead of regex.
+
+Neither tool uses `go mod graph` for dependency ordering. Parsing direct requires via `go mod edit -json` per
+module is the established pattern; topological sort is always implemented separately.
 
 ---
 
