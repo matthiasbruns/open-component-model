@@ -154,21 +154,19 @@ escape hatch for genuine single-module hotfixes with no consumers to update.
 
 ### Sparse-checkout strategy
 
-**Keep sparse-checkout + gitignore `go.work` (selected)**
+**Full checkout, single lint job (selected)**
 
-* **Pros:** Each job downloads only what it needs. Clearly worthwhile for `golangci_lint` (parallel jobs, each scoped to
-  one module + `bindings/`) and for controller/e2e/conformance jobs (avoid pulling all binding source for builds that
-  don't need it). `go.work` is not committed — it is generated in CI via `task init/go.work` after checkout, producing a
-  workspace scoped to the checked-out tree automatically.
-* **Cons:** Every CI job must run `task init/go.work` before Go tooling; requires `arduino/setup-task` (or equivalent)
-  before `setup-go`. The authoritative Go version is stored in `.go-version` rather than `go.work`.
+* **Pros:** Simpler; fewer moving parts. `golangci-lint` runs once across all modules via `task lint` (which uses
+  `go work edit -json` to enumerate paths). One Go setup, one lint binary install, one runner. Controller/e2e/conformance
+  jobs use sparse-checkout where they already do, unaffected.
+* **Cons:** Every binding CI job downloads the full repository rather than just `bindings/`. Acceptable given that
+  the monorepo is not especially large and the simplicity gain outweighs the marginal checkout overhead.
 
-**Full checkout everywhere (not selected)**
+**Per-module sparse-checkout matrix (not selected)**
 
-* **Pros:** Simpler; fewer moving parts; easier to reason about.
-* **Cons:** Every job downloads the full repository. For jobs that only need `bindings/`, this pulls in `cli/`,
-  `kubernetes/controller/`, `website/`, `conformance/` source unnecessarily. For the `golangci_lint` matrix (35 parallel
-  jobs), this overhead multiplies.
+* **Pros:** Each lint job downloads only its module + `bindings/`.
+* **Cons:** 35 parallel jobs each paying for Go setup, lint binary install, and sparse-checkout machinery. The setup
+  overhead dominates the checkout savings. Running lint sequentially in one pass via `go.work` is faster overall.
 
 ### Release strategy
 
@@ -215,7 +213,7 @@ module, and compilation would fail or silently use stale cached builds of its de
 
 | Job                           | Sparse checkout                               | Workspace                  |
 |-------------------------------|-----------------------------------------------|----------------------------|
-| `golangci_lint` per module    | `${{ matrix.module }} + bindings/ + config`   | `task init/go.work`        |
+| `golangci_lint`               | full checkout                                 | `task init/go.work`        |
 | `kubernetes-controller` build | `kubernetes/controller/ + bindings/ + config` | `task init/go.work`        |
 | `e2e`, `conformance`          | module-specific + config                      | none (no workspace needed) |
 | `test-bindings` unit          | `bindings/`                                   | `task init/go.work`        |

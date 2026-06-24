@@ -184,6 +184,11 @@ tasks:
       - for: { var: GO_MODULES }
         cmd: 'go work use {{.ITEM}}'
 
+  lint:
+    desc: "Run golangci-lint across all binding modules in the workspace"
+    cmds:
+      - go work edit -json | jq -r '.Use[].DiskPath' | xargs -I{} golangci-lint run --config={{.ROOT_DIR}}/golangci.yml --timeout=10m {}//...
+
   tidy:
     desc: "Run go mod tidy on all Go modules in the project"
     cmds:
