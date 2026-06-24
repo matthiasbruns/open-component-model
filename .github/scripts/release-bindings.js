@@ -369,7 +369,7 @@ export async function pinDeps({core}) {
     // For each module (bindings in topo order, then consumers), pin the versions
     // of any internal deps that changed in this release run:
     //   - semver-tagged deps: go mod edit -require (tag may not exist yet, no fetch)
-    //   - untagged deps:      GOPROXY=direct go get @commit (Go derives the pseudo-version)
+    //   - untagged deps:      go get @commit (Go derives the pseudo-version)
     for (const mod of [...ordered, ...consumers]) {
         const deps = getDeps(mod);
         const semverPins = deps.filter(dep => taggedSet.has(dep));
@@ -391,10 +391,7 @@ export async function pinDeps({core}) {
         for (const dep of commitPins) {
             const name = `${OCM_PREFIX}${dep}`;
             core.info(`  ${dryRun ? '[dry-run] ' : ''}${name}@${headCommit.slice(0, 12)} (commit)`);
-            if (!dryRun) go_(['get', `${name}@${headCommit}`], {
-                cwd: modDir,
-                env: {...process.env, GOPROXY: 'direct', GONOSUMDB: 'ocm.software/open-component-model/*'},
-            });
+            if (!dryRun) go_(['get', `${name}@${headCommit}`], {cwd: modDir});
         }
 
         if (!dryRun) go_(['mod', 'tidy'], {cwd: modDir});
