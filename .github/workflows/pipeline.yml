@@ -41,6 +41,11 @@ on:
         description: "Override version embedded in the CLI binary via ldflags. Used by release.yml to embed the base version (e.g. v0.5.0) in RC builds."
         type: string
         required: false
+      validate_pins:
+        description: "Build with GOWORK=off to validate go.mod pins (release builds only)."
+        type: boolean
+        required: false
+        default: false
     outputs:
       cli_artifact_name:
         description: "CLI artifact name (binaries + OCI layout) from the build job."
@@ -85,6 +90,7 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
       build_version: ${{ inputs.build_version }}
+      validate_pins: ${{ inputs.validate_pins || false }}
 
   build_controller:
     uses: ./.github/workflows/kubernetes-controller.yml
@@ -93,6 +99,7 @@ jobs:
       actions: read
     with:
       ref: ${{ inputs.ref }}
+      validate_pins: ${{ inputs.validate_pins || false }}
   # === workflow_call end ===
 
   # === This is new, but it replaces conformance and conformance-pr/published in cli.yml + kubernetes-controller.yml ===

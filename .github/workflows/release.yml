@@ -254,6 +254,7 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.new_tag }}
       build_version: ${{ needs.prepare.outputs.base_version }}
+      validate_pins: true
 
   # === Copied from cli-release.yml::release_rc + controller-release.yml::release_rc ===
   # Combines into one pre-release containing both CLI assets (binaries + OCI tarballs)

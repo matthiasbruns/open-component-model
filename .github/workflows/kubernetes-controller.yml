@@ -16,6 +16,11 @@ on:
         description: "The ref to build on (branch or tag). Defaults to the current ref."
         type: string
         required: false
+      validate_pins:
+        description: "Build with GOWORK=off to validate go.mod pins match the workspace (release builds only)."
+        type: boolean
+        required: false
+        default: false
     outputs:
       artifact_name:
         description: "The OCI image artifact name."
@@ -121,6 +126,7 @@ jobs:
           version: 3.x
 
       - name: Init workspace
+        if: ${{ !inputs.validate_pins }}
         run: task init/go.work
 
       - name: Setup docker/buildx
@@ -151,6 +157,8 @@ jobs:
         working-directory: ${{ env.LOCATION }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GOWORK: ${{ inputs.validate_pins && 'off' || '' }}
+          GOPROXY: ${{ inputs.validate_pins && 'direct' || '' }}
         run: |
           task docker-build/multi-arch \
             CONTROLLER_IMG="${IMAGE_NAME}:${VERSION}" \
