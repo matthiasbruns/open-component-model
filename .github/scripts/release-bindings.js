@@ -67,6 +67,11 @@ export function discoverModules(repoRoot) {
  * indirect markers, multi-line blocks) is handled correctly by the Go
  * toolchain itself rather than a regex.
  *
+ * OpenTelemetry's crosslink solves the same problem (go.mod-derived topo-sort)
+ * but via regex parsing, which silently mishandles edge cases. Our approach was
+ * validated against crosslink in ADR-0025 (§ External Alternatives Evaluated):
+ * https://github.com/open-telemetry/opentelemetry-go-build-tools/tree/main/crosslink
+ *
  * @param {string} repoRoot
  * @param {string} modPath
  * @returns {string[]}

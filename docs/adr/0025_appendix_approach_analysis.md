@@ -1,3 +1,5 @@
+THIS FILE WILL NOT LAND IN THE OCM REPO
+
 # ADR-0025 Appendix: External Approach Analysis
 
 Reference for approaches evaluated in the context of [ADR-0025](0025_bindings_ci_and_release_strategy.md) and
