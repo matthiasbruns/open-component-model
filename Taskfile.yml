@@ -196,7 +196,7 @@ tasks:
         sh: go work edit -json | jq -r '.Use[].DiskPath' | grep 'bindings/go' | grep -v '/integration'
     cmds:
       - for: { var: BINDING_MODULES }
-        cmd: 'cd {{.ROOT_DIR}}/{{.ITEM}} && go test ./...'
+        cmd: 'cd {{.ROOT_DIR}}/{{.ITEM}} && task test'
 
   tidy:
     desc: "Run go mod tidy on all Go modules in the project"
