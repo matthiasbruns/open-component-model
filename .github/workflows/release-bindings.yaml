@@ -305,11 +305,10 @@ jobs:
       - name: Pin go.mod dependencies
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          ORDERED_JSON:  ${{ needs.plan.outputs.ordered_json }}
+          ORDERED_JSON:   ${{ needs.plan.outputs.ordered_json }}
           CONSUMERS_JSON: ${{ inputs.consumers_json || '["cli","kubernetes/controller"]' }}
-          TAGS_JSON:     ${{ needs.plan.outputs.tags_json }}
-          HEAD_COMMIT:   ${{ needs.plan.outputs.head_commit }}
-          DRY_RUN:       ${{ inputs.dry_run == true && 'true' || 'false' }}
+          TAGS_JSON:      ${{ needs.plan.outputs.tags_json }}
+          DRY_RUN:        ${{ inputs.dry_run == true && 'true' || 'false' }}
         with:
           script: |
             const { pinDeps } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');

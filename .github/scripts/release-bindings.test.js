@@ -91,7 +91,7 @@ assert.strictEqual(latestVersionTag('m', mockGit('m/v0.0.46')),           'm/v0.
 assert.strictEqual(latestVersionTag('m', mockGit('')),                     null);
 assert.strictEqual(latestVersionTag('m', () => { throw new Error(); }),    null, 'git error → null');
 
-// No existing tag → null (pinned via go get @commit instead)
+// No existing tag → null (pinned via pseudo-version instead)
 assert.strictEqual(computeNextTag('bindings/go/cel',  'patch', mockGit('')), null);
 assert.strictEqual(computeNextTag('bindings/go/cel',  'minor', mockGit('')), null);
 
