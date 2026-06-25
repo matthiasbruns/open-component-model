@@ -394,8 +394,6 @@ export async function pinDeps({core}) {
             if (!dryRun) go_(['get', `${name}@${headCommit}`], {cwd: modDir});
         }
 
-        if (!dryRun) go_(['mod', 'tidy'], {cwd: modDir});
-        else core.info('  [dry-run] would run go mod tidy');
     }
 }
 
