@@ -416,7 +416,7 @@ export async function publish({core}) {
             // tag does not exist yet — create it
         }
 
-        git(['tag', '-s', '-m', `Release ${tag}`, tag]);
+        git(['tag', '-a', '-m', `Release ${tag}`, tag]);
         core.info(`  ${tag}`);
     }
 
