@@ -197,8 +197,7 @@ export function detectBump(modPath, lastTag, execGit = git) {
 
 /**
  * Compute the next semver tag for an already-tagged module.
- * Returns null for modules with no existing tag — those are pinned
- * via `go get @commit` instead (no tag created).
+ * Returns null for modules with no existing tag — they must be released separately first.
  *
  * @param {string} modPath
  * @param {'patch'|'minor'} bumpKind
@@ -294,7 +293,7 @@ export async function planRelease({core}) {
         const nextTag = computeNextTag(mod, bump);
 
         if (!nextTag) {
-            core.info(`  ${mod} → (untagged, will pin via commit hash)`);
+            core.info(`  ${mod} → (no prior tag; skipped — module must be released separately first)`);
             continue;
         }
 
@@ -360,40 +359,26 @@ export async function pinDeps({core}) {
     const ordered    = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
     const consumers  = /** @type {string[]} */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
     const tags       = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
-    const headCommit = process.env.HEAD_COMMIT ?? git(['rev-parse', 'HEAD']);
-    const dryRun     = process.env.DRY_RUN === 'true';
+    const dryRun = process.env.DRY_RUN === 'true';
 
-    const taggedSet  = new Set(Object.keys(tags));
-    const getDeps    = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
+    const taggedSet = new Set(Object.keys(tags));
+    const getDeps   = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
 
-    // For each module (bindings in topo order, then consumers), pin the versions
-    // of any internal deps that changed in this release run:
-    //   - semver-tagged deps: go mod edit -require (tag may not exist yet, no fetch)
-    //   - untagged deps:      go get @commit (Go derives the pseudo-version)
+    // For each module (bindings in topo order, then consumers), pin the semver
+    // version of any internal deps that are being released in this run.
     for (const mod of [...ordered, ...consumers]) {
-        const deps = getDeps(mod);
-        const semverPins = deps.filter(dep => taggedSet.has(dep));
-        const commitPins = deps.filter(dep => !taggedSet.has(dep) && ordered.includes(dep)
-                                              && !latestTag(dep));
-
-        if (!semverPins.length && !commitPins.length) continue;
+        const pins = getDeps(mod).filter(dep => taggedSet.has(dep));
+        if (!pins.length) continue;
 
         core.info(`\nPinning deps in ${mod}:`);
         const modDir = join(repoRoot, mod);
 
-        for (const dep of semverPins) {
+        for (const dep of pins) {
             const version = tagToVersion(tags[dep]);
             const name    = `${OCM_PREFIX}${dep}`;
             core.info(`  ${dryRun ? '[dry-run] ' : ''}${name}@${version}`);
             if (!dryRun) go_(['mod', 'edit', `-require=${name}@${version}`], {cwd: modDir});
         }
-
-        for (const dep of commitPins) {
-            const name = `${OCM_PREFIX}${dep}`;
-            core.info(`  ${dryRun ? '[dry-run] ' : ''}${name}@${headCommit.slice(0, 12)} (commit)`);
-            if (!dryRun) go_(['get', `${name}@${headCommit}`], {cwd: modDir});
-        }
-
     }
 }
 
