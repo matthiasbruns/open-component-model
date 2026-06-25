@@ -315,12 +315,6 @@ jobs:
             const { pinDeps } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
             await pinDeps({ core });
 
-      - name: Commit dependency pins
-        if: ${{ !inputs.dry_run }}
-        run: |
-          git diff --name-only -- '*/go.mod' '*/go.sum' | xargs --no-run-if-empty git add
-          git diff --staged --quiet || git commit -S -s -m "chore(release): pin binding go.mod deps for release"
-
       - name: Publish tags
         id: publish
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -332,3 +326,16 @@ jobs:
           script: |
             const { publish } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
             await publish({ core });
+
+      - name: Tidy go.sum files
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git diff --name-only -- '*/go.mod' | xargs -rI{} dirname {} | sort -u | while read -r dir; do
+            go -C "$dir" mod tidy
+          done
+
+      - name: Commit dependency pins
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git diff --name-only -- '*/go.mod' '*/go.sum' | xargs --no-run-if-empty git add
+          git diff --staged --quiet || git commit -S -s -m "chore(release): pin binding go.mod deps for release"
