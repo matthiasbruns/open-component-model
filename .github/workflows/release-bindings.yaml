@@ -316,6 +316,12 @@ jobs:
 
       - name: Tidy go.sum files
         if: ${{ !inputs.dry_run }}
+        env:
+          # Bypass the proxy for OCM modules — new tags only exist in this repo,
+          # not yet on the canonical upstream that the proxy indexes. Workspace
+          # mode resolves them from local disk; non-OCM deps still use the proxy.
+          GONOPROXY: ocm.software/*
+          GONOSUMDB: ocm.software/*
         run: |
           git diff --name-only -- '*/go.mod' | xargs -rI{} dirname {} | sort -u | while read -r dir; do
             go -C "$dir" mod tidy
