@@ -18,6 +18,8 @@ jobs:
   create-release-branch:
     name: Create Release Branch from ${{ github.event.inputs.source_branch }} to ${{ github.event.inputs.target_branch }}
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
     environment:
       name: automation
       deployment: false
@@ -30,6 +32,8 @@ jobs:
 
       - name: Generate App Token
         id: get_token
+        # continue-on-error so forks without bot secrets fall back to github.token below.
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.OCMBOT_APP_ID }}
@@ -42,7 +46,7 @@ jobs:
           TARGET_BRANCH: ${{ github.event.inputs.target_branch }}
           SOURCE_BRANCH: ${{ github.event.inputs.source_branch }}
         with:
-          github-token: ${{ steps.get_token.outputs.token }}
+          github-token: ${{ steps.get_token.outputs.token || github.token }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
