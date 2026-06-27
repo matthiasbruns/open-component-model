@@ -349,38 +349,63 @@ export async function planRelease({core}) {
 }
 
 /**
+ * Compute the version pins for all modules (bindings + consumers).
+ *
+ * For each module's internal binding deps:
+ *   - released this run (in tags)      → pin to the new tag
+ *   - skipped/unchanged (latestTag ≠ null) → pin to the current latest tag
+ *   - new module with no tag yet       → skip (no pin possible)
+ *   - external dep (not in ordered)    → ignored
+ *
+ * @param {string[]} ordered
+ * @param {Record<string, string>} tags  module → new tag being released
+ * @param {string[]} consumers
+ * @param {(mod: string) => string[]} getDeps
+ * @param {(mod: string) => string|null} getLatestTag
+ * @returns {Map<string, Array<{name: string, version: string}>>}
+ */
+export function resolvePins(ordered, tags, consumers, getDeps, getLatestTag) {
+    const taggedSet  = new Set(Object.keys(tags));
+    const orderedSet = new Set(ordered);
+    /** @type {Map<string, Array<{name: string, version: string}>>} */
+    const result = new Map();
+
+    for (const mod of [...ordered, ...consumers]) {
+        const pins = [];
+        for (const dep of getDeps(mod)) {
+            if (!orderedSet.has(dep)) continue; // external dep — ignore
+            const tag = taggedSet.has(dep) ? tags[dep] : getLatestTag(dep);
+            if (!tag) continue; // new untagged module — skip
+            pins.push({name: `${OCM_PREFIX}${dep}`, version: tagToVersion(tag)});
+        }
+        if (pins.length) result.set(mod, pins);
+    }
+    return result;
+}
+
+/**
  * Step 3 — Pin newly-released internal deps in each module's go.mod, then tidy.
  * Reads ORDERED_JSON and TAGS_JSON from the environment.
  *
  * @param {import('@actions/github-script').AsyncFunctionArguments} args
  */
 export async function pinDeps({core}) {
-    const repoRoot   = process.env.GITHUB_WORKSPACE ?? process.cwd();
-    const ordered    = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
-    const consumers  = /** @type {string[]} */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
-    const tags       = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
-    const dryRun = process.env.DRY_RUN === 'true';
+    const repoRoot  = process.env.GITHUB_WORKSPACE ?? process.cwd();
+    const ordered   = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+    const consumers = /** @type {string[]} */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
+    const tags      = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
+    const dryRun    = process.env.DRY_RUN === 'true';
 
-    const taggedSet  = new Set(Object.keys(tags));
-    const orderedSet = new Set(ordered);
-    const getDeps    = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
+    const pins = resolvePins(
+        ordered, tags, consumers,
+        mod => internalDepsOf(repoRoot, mod),
+        latestTag,
+    );
 
-    // For each module (bindings in topo order, then consumers), pin every
-    // internal binding dep to its authoritative version:
-    //   - released this run → use the new tag from tags[]
-    //   - skipped (unchanged) → use latestTag() so consumers stay current
-    for (const mod of [...ordered, ...consumers]) {
-        const deps = getDeps(mod).filter(dep => orderedSet.has(dep));
-        if (!deps.length) continue;
-
+    for (const [mod, modPins] of pins) {
         core.info(`\nPinning deps in ${mod}:`);
         const modDir = join(repoRoot, mod);
-
-        for (const dep of deps) {
-            const tag     = taggedSet.has(dep) ? tags[dep] : latestTag(dep);
-            if (!tag) continue; // new module with no tag yet — skip
-            const version = tagToVersion(tag);
-            const name    = `${OCM_PREFIX}${dep}`;
+        for (const {name, version} of modPins) {
             core.info(`  ${dryRun ? '[dry-run] ' : ''}${name}@${version}`);
             if (!dryRun) go_(['mod', 'edit', `-require=${name}@${version}`], {cwd: modDir});
         }
