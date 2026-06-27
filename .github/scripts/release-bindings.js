@@ -361,20 +361,25 @@ export async function pinDeps({core}) {
     const tags       = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
     const dryRun = process.env.DRY_RUN === 'true';
 
-    const taggedSet = new Set(Object.keys(tags));
-    const getDeps   = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
+    const taggedSet  = new Set(Object.keys(tags));
+    const orderedSet = new Set(ordered);
+    const getDeps    = (/** @type {string} */ mod) => internalDepsOf(repoRoot, mod);
 
-    // For each module (bindings in topo order, then consumers), pin the semver
-    // version of any internal deps that are being released in this run.
+    // For each module (bindings in topo order, then consumers), pin every
+    // internal binding dep to its authoritative version:
+    //   - released this run → use the new tag from tags[]
+    //   - skipped (unchanged) → use latestTag() so consumers stay current
     for (const mod of [...ordered, ...consumers]) {
-        const pins = getDeps(mod).filter(dep => taggedSet.has(dep));
-        if (!pins.length) continue;
+        const deps = getDeps(mod).filter(dep => orderedSet.has(dep));
+        if (!deps.length) continue;
 
         core.info(`\nPinning deps in ${mod}:`);
         const modDir = join(repoRoot, mod);
 
-        for (const dep of pins) {
-            const version = tagToVersion(tags[dep]);
+        for (const dep of deps) {
+            const tag     = taggedSet.has(dep) ? tags[dep] : latestTag(dep);
+            if (!tag) continue; // new module with no tag yet — skip
+            const version = tagToVersion(tag);
             const name    = `${OCM_PREFIX}${dep}`;
             core.info(`  ${dryRun ? '[dry-run] ' : ''}${name}@${version}`);
             if (!dryRun) go_(['mod', 'edit', `-require=${name}@${version}`], {cwd: modDir});
