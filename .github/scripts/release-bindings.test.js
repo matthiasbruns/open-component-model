@@ -2,7 +2,7 @@ import assert from 'assert';
 import {
   discoverModules, internalDepsOf, topoSort,
   bumpVersion, tagToVersion, latestVersionTag, computeNextTag,
-  hasChanges, detectBump, pinsFor,
+  hasChanges, detectBump, pinsFor, resolvePins,
 } from './release-bindings.js';
 
 /** @param {string} output  returned for all git calls (tag list, log, etc.) */
@@ -174,6 +174,70 @@ console.log('Testing pinsFor...');
   // External dep not in tags → not pinned
   const pins = pinsFor(['A', 'B'], { A: 'bindings/go/a/v0.1.0' }, () => ['A', 'external']);
   assert.strictEqual(pins.get('B')?.length, 1, 'only released dep is pinned');
+}
+
+// ----------------------------------------------------------
+// resolvePins — all paths
+// ----------------------------------------------------------
+console.log('Testing resolvePins...');
+
+{
+  const ordered   = ['bindings/go/runtime', 'bindings/go/oci', 'bindings/go/transfer'];
+  const tags      = { 'bindings/go/runtime': 'bindings/go/runtime/v0.0.9' };
+  const consumers = ['cli'];
+
+  // dep released this run → pinned to new tag
+  {
+    const pins = resolvePins(ordered, tags, [], mod => mod === 'bindings/go/oci' ? ['bindings/go/runtime'] : [], () => null);
+    assert.deepStrictEqual(pins.get('bindings/go/oci'), [
+      { name: 'ocm.software/open-component-model/bindings/go/runtime', version: 'v0.0.9' },
+    ], 'released dep pinned to new tag');
+  }
+
+  // dep skipped but has existing tag → pinned to latest tag
+  {
+    const latestTags = { 'bindings/go/oci': 'bindings/go/oci/v0.0.47' };
+    const pins = resolvePins(ordered, {}, [], mod => mod === 'bindings/go/transfer' ? ['bindings/go/oci'] : [], mod => latestTags[mod] ?? null);
+    assert.deepStrictEqual(pins.get('bindings/go/transfer'), [
+      { name: 'ocm.software/open-component-model/bindings/go/oci', version: 'v0.0.47' },
+    ], 'skipped dep pinned to latest existing tag');
+  }
+
+  // new module with no tag at all → skipped entirely
+  {
+    const pins = resolvePins(ordered, {}, [], mod => mod === 'bindings/go/transfer' ? ['bindings/go/oci'] : [], () => null);
+    assert.ok(!pins.has('bindings/go/transfer'), 'new untagged dep produces no pin');
+  }
+
+  // external dep (not in ordered) → ignored
+  {
+    const pins = resolvePins(ordered, tags, [], () => ['github.com/external/lib'], () => null);
+    assert.strictEqual(pins.size, 0, 'external dep not pinned');
+  }
+
+  // module with no binding deps → absent from result
+  {
+    const pins = resolvePins(ordered, tags, [], () => [], () => null);
+    assert.strictEqual(pins.size, 0, 'module with no deps absent from result');
+  }
+
+  // consumer gets both released and skipped deps pinned
+  {
+    const latestTags = { 'bindings/go/oci': 'bindings/go/oci/v0.0.47' };
+    const getDeps = mod => mod === 'cli' ? ['bindings/go/runtime', 'bindings/go/oci'] : [];
+    const pins = resolvePins(ordered, tags, consumers, getDeps, mod => latestTags[mod] ?? null);
+    const cliPins = pins.get('cli') ?? [];
+    assert.strictEqual(cliPins.length, 2, 'consumer gets all binding deps pinned');
+    assert.ok(cliPins.some(p => p.name.endsWith('runtime') && p.version === 'v0.0.9'), 'released dep');
+    assert.ok(cliPins.some(p => p.name.endsWith('oci')     && p.version === 'v0.0.47'), 'skipped dep');
+  }
+
+  // released dep takes precedence over any existing latestTag
+  {
+    const latestTags = { 'bindings/go/runtime': 'bindings/go/runtime/v0.0.8' };
+    const pins = resolvePins(ordered, tags, [], mod => mod === 'bindings/go/oci' ? ['bindings/go/runtime'] : [], mod => latestTags[mod] ?? null);
+    assert.deepStrictEqual(pins.get('bindings/go/oci')?.[0].version, 'v0.0.9', 'new tag beats latestTag');
+  }
 }
 
 // ----------------------------------------------------------
