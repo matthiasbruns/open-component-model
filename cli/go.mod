@@ -24,15 +24,15 @@ require (
 	ocm.software/open-component-model/bindings/go/ctf v0.4.1
 	ocm.software/open-component-model/bindings/go/dag v0.0.6
 	ocm.software/open-component-model/bindings/go/descriptor/normalisation v0.0.0-20260619100120-b5c833feb225
-	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260619100413-04218d2d8510
+	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260625065312-d374c10f9e61
 	ocm.software/open-component-model/bindings/go/descriptor/v2 v2.0.3-alpha3
 	ocm.software/open-component-model/bindings/go/gpg v0.0.0-20260619090332-6e130e1ce82f
 	ocm.software/open-component-model/bindings/go/helm v0.0.0-20260619090332-6e130e1ce82f
-	ocm.software/open-component-model/bindings/go/http v0.0.0-20260619090332-6e130e1ce82f
+	ocm.software/open-component-model/bindings/go/http v0.0.0-20260625071756-d21b8e0a6de0
 	ocm.software/open-component-model/bindings/go/input/dir v0.0.4
 	ocm.software/open-component-model/bindings/go/input/file v0.0.5
 	ocm.software/open-component-model/bindings/go/input/utf8 v0.0.0-20260619090332-6e130e1ce82f
-	ocm.software/open-component-model/bindings/go/oci v0.0.46
+	ocm.software/open-component-model/bindings/go/oci v0.0.47
 	ocm.software/open-component-model/bindings/go/plugin v0.0.17
 	ocm.software/open-component-model/bindings/go/repository v0.0.10
 	ocm.software/open-component-model/bindings/go/rsa v0.0.0-20260619095118-674ff59ff891
