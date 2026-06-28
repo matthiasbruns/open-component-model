@@ -314,24 +314,8 @@ jobs:
             const { publish } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
             await publish({ core });
 
-      - name: Tidy go.sum files
-        if: ${{ !inputs.dry_run }}
-        env:
-          # Bypass the proxy for OCM modules — new tags only exist in this repo,
-          # not yet on the canonical upstream that the proxy indexes. Workspace
-          # mode resolves them from local disk; non-OCM deps still use the proxy.
-          # Prefix form (no wildcard) matches all subpaths:
-          # ocm.software/open-component-model/bindings/go/runtime etc.
-          # A glob like ocm.software/* only matches one path level.
-          GONOPROXY: ocm.software
-          GONOSUMDB: ocm.software
-        run: |
-          git diff --name-only -- '*/go.mod' | xargs -rI{} dirname {} | sort -u | while read -r dir; do
-            go -C "$dir" mod tidy
-          done
-
       - name: Commit dependency pins
         if: ${{ !inputs.dry_run }}
         run: |
-          git diff --name-only -- '*/go.mod' '*/go.sum' | xargs --no-run-if-empty git add
+          git diff --name-only -- '*/go.mod' | xargs --no-run-if-empty git add
           git diff --staged --quiet || git commit -s -m "chore(release): pin binding go.mod deps for release"
