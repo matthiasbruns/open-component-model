@@ -73,7 +73,7 @@ jobs:
         # The upstream remote has no credentials: push to it is structurally impossible.
         run: |
           git remote add upstream https://github.com/open-component-model/open-component-model.git || true
-          git fetch upstream --tags --no-recurse-submodules
+          git fetch upstream --tags --force --no-recurse-submodules
 
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -257,7 +257,7 @@ jobs:
         # Without upstream tags it would incorrectly use go get @commit for tagged deps.
         run: |
           git remote add upstream https://github.com/open-component-model/open-component-model.git || true
-          git fetch upstream --tags --no-recurse-submodules
+          git fetch upstream --tags --force --no-recurse-submodules
 
       - name: Setup git identity
         env:
