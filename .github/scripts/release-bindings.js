@@ -137,6 +137,38 @@ export function topoSort(modules, depsMap) {
     return sorted;
 }
 
+/**
+ * Group modules into dependency levels for batched sequential release.
+ *
+ * Modules in the same level share no intra-level dependencies, so they can
+ * be pinned, tidied, committed, and tagged together. All dependencies of
+ * level N are in levels 0..N-1 and will already have been pushed to the
+ * proxy before level N begins.
+ *
+ * @param {string[]} ordered  modules in topological order (deps before dependents)
+ * @param {Map<string, string[]>} depsMap  module → its direct internal deps
+ * @returns {string[][]}  array of groups; group[0] has no internal deps
+ */
+export function groupByLevel(ordered, depsMap) {
+    /** @type {Map<string, number>} */
+    const levels = new Map();
+
+    for (const mod of ordered) {
+        const deps = (depsMap.get(mod) ?? []).filter(d => levels.has(d));
+        const level = deps.length === 0 ? 0 : Math.max(...deps.map(d => levels.get(d) ?? 0)) + 1;
+        levels.set(mod, level);
+    }
+
+    /** @type {string[][]} */
+    const groups = [];
+    for (const mod of ordered) {
+        const level = levels.get(mod) ?? 0;
+        while (groups.length <= level) groups.push([]);
+        groups[level].push(mod);
+    }
+    return groups;
+}
+
 // bumpVersion and latestTag imported from submodule-version.js (shared with
 // release-go-submodule.yaml). Re-export bumpVersion for test coverage.
 export {bumpVersion} from './submodule-version.js';
@@ -246,14 +278,19 @@ export async function buildGraph({core}) {
     const moduleSet = new Set(modules);
     const depsMap = new Map(modules.map(m => [m, internalDepsOf(repoRoot, m).filter(d => moduleSet.has(d))]));
     const ordered = topoSort(modules, depsMap);
+    const groups  = groupByLevel(ordered, depsMap);
 
-    core.info(`Discovered ${ordered.length} binding modules in release order:`);
-    for (const m of ordered) {
-        const deps = depsMap.get(m) ?? [];
-        core.info(`  ${m}${deps.length ? ` ← ${deps.join(', ')}` : ''}`);
-    }
+    core.info(`Discovered ${ordered.length} binding modules in ${groups.length} dependency level(s):`);
+    groups.forEach((group, i) => {
+        core.info(`  Level ${i}:`);
+        for (const m of group) {
+            const deps = depsMap.get(m) ?? [];
+            core.info(`    ${m}${deps.length ? ` ← ${deps.join(', ')}` : ''}`);
+        }
+    });
 
     core.setOutput('ordered_json', JSON.stringify(ordered));
+    core.setOutput('groups_json',  JSON.stringify(groups));
 }
 
 /**

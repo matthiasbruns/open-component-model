@@ -1,6 +1,6 @@
 import assert from 'assert';
 import {
-  discoverModules, internalDepsOf, topoSort,
+  discoverModules, internalDepsOf, topoSort, groupByLevel,
   bumpVersion, tagToVersion, latestVersionTag, computeNextTag,
   hasChanges, detectBump, pinsFor, resolvePins,
 } from './release-bindings.js';
@@ -61,6 +61,68 @@ console.log('Testing topoSort...');
 }
 assert.throws(() => topoSort(['A', 'B'], new Map([['A', ['B']], ['B', ['A']]])), /Cycle/);
 assert.deepStrictEqual(topoSort(['A'], new Map([['A', []]])), ['A']);
+
+// ----------------------------------------------------------
+// groupByLevel
+// ----------------------------------------------------------
+console.log('Testing groupByLevel...');
+
+{
+  // runtime ← blob, configuration
+  // blob, configuration ← ctf
+  const depsMap = new Map([
+    ['bindings/go/runtime',       []],
+    ['bindings/go/blob',          ['bindings/go/runtime']],
+    ['bindings/go/configuration', ['bindings/go/runtime']],
+    ['bindings/go/ctf',           ['bindings/go/blob', 'bindings/go/configuration']],
+  ]);
+  const ordered = topoSort([...depsMap.keys()], depsMap);
+  const groups  = groupByLevel(ordered, depsMap);
+
+  // level 0: runtime (no deps)
+  assert.deepStrictEqual(groups[0], ['bindings/go/runtime'], 'level 0: root only');
+
+  // level 1: blob and configuration (both only depend on runtime)
+  assert.deepStrictEqual(groups[1].sort(), ['bindings/go/blob', 'bindings/go/configuration'].sort(),
+    'level 1: direct deps of root');
+
+  // level 2: ctf (depends on level-1 modules)
+  assert.deepStrictEqual(groups[2], ['bindings/go/ctf'], 'level 2: downstream');
+
+  // No module appears in more than one group
+  const flat = groups.flat();
+  assert.strictEqual(flat.length, new Set(flat).size, 'no duplicates across groups');
+  assert.strictEqual(flat.length, depsMap.size, 'all modules present');
+}
+
+{
+  // Independent modules with no deps → all in level 0
+  const depsMap = new Map([['A', []], ['B', []], ['C', []]]);
+  const ordered = topoSort([...depsMap.keys()], depsMap);
+  const groups  = groupByLevel(ordered, depsMap);
+  assert.strictEqual(groups.length, 1, 'all independent → single group');
+  assert.deepStrictEqual(groups[0].sort(), ['A', 'B', 'C'].sort(), 'all in level 0');
+}
+
+{
+  // Linear chain A ← B ← C ← D → each at its own level
+  const depsMap = new Map([['A', []], ['B', ['A']], ['C', ['B']], ['D', ['C']]]);
+  const ordered = topoSort([...depsMap.keys()], depsMap);
+  const groups  = groupByLevel(ordered, depsMap);
+  assert.strictEqual(groups.length, 4, 'linear chain: one module per level');
+  assert.deepStrictEqual(groups.map(g => g[0]), ['A', 'B', 'C', 'D'], 'correct linear order');
+}
+
+{
+  // Diamond: A ← B, A ← C, B+C ← D
+  // D depends on B (level 1) and C (level 1), so D is level 2
+  const depsMap = new Map([['A', []], ['B', ['A']], ['C', ['A']], ['D', ['B', 'C']]]);
+  const ordered = topoSort([...depsMap.keys()], depsMap);
+  const groups  = groupByLevel(ordered, depsMap);
+  assert.deepStrictEqual(groups[0], ['A'],       'diamond: root at level 0');
+  assert.deepStrictEqual(groups[1].sort(), ['B', 'C'].sort(), 'diamond: middle at level 1');
+  assert.deepStrictEqual(groups[2], ['D'],       'diamond: tip at level 2');
+}
 
 // ----------------------------------------------------------
 // bumpVersion

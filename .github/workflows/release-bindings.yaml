@@ -50,6 +50,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       ordered_json:             ${{ steps.graph.outputs.ordered_json }}
+      groups_json:              ${{ steps.graph.outputs.groups_json }}
       tags_json:                ${{ steps.plan.outputs.tags_json }}
       from_tags_json:           ${{ steps.plan.outputs.from_tags_json }}
       bump_kinds_json:          ${{ steps.plan.outputs.bump_kinds_json }}
