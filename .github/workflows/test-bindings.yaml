@@ -57,11 +57,15 @@ jobs:
           AFFECTED_JSON: ${{ inputs.affected_bindings_json }}
         run: |
           if [ "$AFFECTED_JSON" = '[]' ] || [ -z "$AFFECTED_JSON" ]; then
-            go test ./bindings/go/...
+            # All binding modules from workspace
+            modules=$(go work edit -json | jq -r '.Use[].DiskPath' | grep 'bindings/go' | grep -v '/integration')
           else
-            packages=$(echo "$AFFECTED_JSON" | jq -r '.[] | "./\(.)/..."' | tr '\n' ' ')
-            go test $packages
+            modules=$(echo "$AFFECTED_JSON" | jq -r '.[]')
           fi
+          echo "$modules" | while read -r mod; do
+            echo "Testing $mod"
+            go -C "$mod" test ./...
+          done
 
   integration:
     name: "Integration / ${{ matrix.module }}"
