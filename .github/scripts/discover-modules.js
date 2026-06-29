@@ -42,7 +42,7 @@ function internalDepsOf(repoRoot, modPath, execSyncFn) {
  * @param {function} execSyncFn
  * @returns {Map<string, string[]>}
  */
-function buildDependentsMap(modules, repoRoot, execSyncFn) {
+export function buildDependentsMap(modules, repoRoot, execSyncFn) {
   const dependentsOf = new Map(modules.map(m => [m, []]));
   for (const mod of modules) {
     for (const dep of internalDepsOf(repoRoot, mod, execSyncFn)) {
@@ -63,7 +63,7 @@ function buildDependentsMap(modules, repoRoot, execSyncFn) {
  * @param {Map<string, string[]>} dependentsOf
  * @returns {string[]}
  */
-function computeAffectedSet(changedModules, allModules, dependentsOf) {
+export function computeAffectedSet(changedModules, allModules, dependentsOf) {
   const affected = new Set(changedModules.filter(m => allModules.includes(m)));
   const queue = [...affected];
   while (queue.length > 0) {
@@ -85,7 +85,7 @@ function computeAffectedSet(changedModules, allModules, dependentsOf) {
  * @param {string[]} changedFiles
  * @returns {string[]}
  */
-function changedModulesFromFiles(allModules, changedFiles) {
+export function changedModulesFromFiles(allModules, changedFiles) {
   return allModules.filter(mod => changedFiles.some(f => f.startsWith(`${mod}/`)));
 }
 
@@ -119,7 +119,7 @@ function getChangedFiles(baseBranch, execSyncFn) {
  * @param {function} execSyncFn
  * @returns {boolean}
  */
-function isConsumerAffected(consumerPath, affectedBindings, changedFiles, repoRoot, execSyncFn) {
+export function isConsumerAffected(consumerPath, affectedBindings, changedFiles, repoRoot, execSyncFn) {
   if (changedFiles.some(f => f.startsWith(`${consumerPath}/`))) return true;
   return internalDepsOf(repoRoot, consumerPath, execSyncFn)
     .some(dep => affectedBindings.has(dep));
