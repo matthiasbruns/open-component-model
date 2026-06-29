@@ -351,32 +351,29 @@ export async function planRelease({core}) {
 /**
  * Compute the version pins for all modules (bindings + consumers).
  *
- * All target versions are resolved upfront from `tags` and `getLatestTag` —
- * the order of modules does not affect correctness.
- *
  * For each module's internal binding deps:
  *   - released this run (in tags)         → pin to the new tag
  *   - skipped/unchanged (latestTag ≠ null) → pin to the current latest tag
  *   - new module with no tag yet           → skip (no pin possible)
  *   - external dep (not a known binding)   → ignored
  *
- * @param {string[]} modules  all known binding module paths (order irrelevant)
+ * @param {string[]} ordered  binding module paths in topological order (deps before dependents)
  * @param {Record<string, string>} tags  module → new tag being released
  * @param {string[]} consumers
  * @param {(mod: string) => string[]} getDeps
  * @param {(mod: string) => string|null} getLatestTag
  * @returns {Map<string, Array<{name: string, version: string}>>}
  */
-export function resolvePins(modules, tags, consumers, getDeps, getLatestTag) {
+export function resolvePins(ordered, tags, consumers, getDeps, getLatestTag) {
     const taggedSet  = new Set(Object.keys(tags));
-    const moduleSet  = new Set(modules);
+    const orderedSet = new Set(ordered);
     /** @type {Map<string, Array<{name: string, version: string}>>} */
     const result = new Map();
 
-    for (const mod of [...modules, ...consumers]) {
+    for (const mod of [...ordered, ...consumers]) {
         const pins = [];
         for (const dep of getDeps(mod)) {
-            if (!moduleSet.has(dep)) continue; // external dep — ignore
+            if (!orderedSet.has(dep)) continue; // external dep — ignore
             const tag = taggedSet.has(dep) ? tags[dep] : getLatestTag(dep);
             if (!tag) continue; // new untagged module — skip
             pins.push({name: `${OCM_PREFIX}${dep}`, version: tagToVersion(tag)});
@@ -394,13 +391,13 @@ export function resolvePins(modules, tags, consumers, getDeps, getLatestTag) {
  */
 export async function pinDeps({core}) {
     const repoRoot  = process.env.GITHUB_WORKSPACE ?? process.cwd();
-    const modules   = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
+    const ordered   = /** @type {string[]} */ (JSON.parse(process.env.ORDERED_JSON ?? '[]'));
     const consumers = /** @type {string[]} */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
     const tags      = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
     const dryRun    = process.env.DRY_RUN === 'true';
 
     const pins = resolvePins(
-        modules, tags, consumers,
+        ordered, tags, consumers,
         mod => internalDepsOf(repoRoot, mod),
         latestTag,
     );
