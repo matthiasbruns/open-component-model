@@ -7,6 +7,11 @@ name: Test Bindings
 on:
   workflow_call:
     inputs:
+      affected_bindings_json:
+        description: "JSON array of binding paths to unit-test. Empty array means all bindings."
+        type: string
+        required: false
+        default: '[]'
       integration_modules_json:
         description: "JSON array of integration sub-module paths to test"
         type: string
@@ -14,7 +19,7 @@ on:
         default: '[]'
     outputs:
       unit_result:
-        description: "Result of the unit test matrix ('success', 'failure', 'skipped')"
+        description: "Result of the unit test job ('success', 'failure', 'skipped')"
         value: ${{ jobs.unit.result }}
       integration_result:
         description: "Result of the integration test matrix ('success', 'failure', 'skipped')"
@@ -31,7 +36,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          sparse-checkout: bindings/
           persist-credentials: false
 
       - name: Install Task
@@ -49,7 +53,15 @@ jobs:
         run: task init/go.work
 
       - name: Run unit tests
-        run: task bindings/test
+        env:
+          AFFECTED_JSON: ${{ inputs.affected_bindings_json }}
+        run: |
+          if [ "$AFFECTED_JSON" = '[]' ] || [ -z "$AFFECTED_JSON" ]; then
+            go test ./bindings/go/...
+          else
+            packages=$(echo "$AFFECTED_JSON" | jq -r '.[] | "./\(.)/..."' | tr '\n' ' ')
+            go test $packages
+          fi
 
   integration:
     name: "Integration / ${{ matrix.module }}"
