@@ -241,28 +241,33 @@ the `runtime/v0.0.9` tag has been pushed. The two operations cannot happen in th
 2. **Test**: run unit and integration tests for every changed module in parallel.
 3. **Gate**: environment approval — a reviewer sees the full plan (changed modules, next tags, bump kinds,
    changelogs) and test results before any tags are pushed.
-4. **Release**: for each changed module in topological order — pin `go.mod`, update `go.sum`, commit, tag,
-   push. Then pin and tidy `cli` and `kubernetes/controller` in a final commit.
+4. **Release**: for each dependency level (group of modules that share no intra-level dependencies) —
+   pin `go.mod`, update `go.sum`, commit, push all level tags at once, wait for the proxy to index them,
+   then move to the next level. After all binding levels, pin and tidy `cli` and `kubernetes/controller`
+   in a final commit.
 
-The release phase processes one module at a time. Each tag is pushed before the next dependent module is
-processed, so the proxy has the new version available when that module runs `go mod tidy`.
+The release phase processes one level at a time. All modules within a level are independent of each other,
+so their go.mod files and go.sum files can be updated together in a single commit. Each level's tags are
+pushed before the next level begins, so `go mod tidy` in the next level can fetch the checksums it needs
+from the proxy.
 
 ### Dependency pinning and go.sum update
 
-For each changed binding module in topological order, the release does the following:
+For each dependency level, all changed modules in that level are processed together:
 
 ```mermaid
 flowchart LR
-    A([start]) --> B[pin go.mod\ngo mod edit -require]
-    B --> C[update go.sum\ngo mod tidy]
+    A([level N]) --> B[pin go.mod\nall modules in level]
+    B --> C[go mod tidy\nall modules in level]
     C --> D[commit\ngo.mod + go.sum]
-    D --> E[tag + push\nproxy indexes it]
-    E --> F([next module])
+    D --> E[tag + push\nall level tags at once]
+    E --> F[wait for proxy\nto index level tags]
+    F --> G([level N+1])
 ```
 
-By the time a module is processed, all its dependencies have already been tagged and pushed in previous
-iterations, so `go mod tidy` can fetch their checksums from the proxy. Each tag therefore points to a commit
-where `go.sum` is complete and valid.
+By the time level N is processed, all tags from levels 0..N-1 are already on the proxy, so `go mod tidy`
+can fetch their checksums. Each tag points to a commit where `go.sum` is complete and valid for that module's
+declared dependencies.
 
 The dep version resolution follows the same logic regardless of whether a dep was released this run or
 previously:
@@ -300,7 +305,7 @@ When the binding is ready for stable versioning:
 1. Merge the binding's implementation to `main`.
 2. Manually trigger `release-go-submodule.yaml` targeting the new binding to create its initial tag
    (e.g., `bindings/go/newbinding/v0.0.1`).
-3. From the next bulk release onwards, `planRelease` picks it up normally and `pinDeps` manages its consumers.
+3. From the next bulk release onwards, `planRelease` picks it up normally and the release loop manages its consumers.
 
 This makes the promotion of a new binding to stable versioning an explicit, intentional act rather than an
 automatic side-effect of the first bulk release that touches it.
