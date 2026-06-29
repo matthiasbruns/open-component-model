@@ -2,10 +2,11 @@
 // Binding release orchestration — one file, named exports per workflow step.
 //
 // Workflow calls each export in sequence:
-//   buildGraph   → discover modules, topo-sort, output ordered_json
-//   planRelease  → compute next semver tag per module, output tags_json
-//   pinDeps      → go mod edit -require + go mod tidy for changed modules
-//   publish      → signed git tags + push + step summary
+//   buildGraph    → discover modules, topo-sort by level, output ordered_json + groups_json
+//   planRelease   → compute next semver tag per module, output tags_json
+//   releaseGroups → for each dependency level: pin go.mod, go mod tidy, commit,
+//                   tag + push, wait for proxy, then repeat for the next level.
+//                   Consumers (cli, controller) are pinned + tidied in a final commit.
 
 import {execFileSync} from 'child_process';
 import {existsSync, writeFileSync} from 'fs';
@@ -493,6 +494,166 @@ export async function publish({core}) {
         core.info(`\nPushed ${entries.length} tags`);
     }
 
+    const heading = dryRun ? '🔍 Binding Release Plan (dry-run)' : '✅ Binding Release Complete';
+    const rows = entries.map(([mod, tag]) => `| \`${mod}\` | \`${tag}\` |`).join('\n');
+    await core.summary
+        .addHeading(heading)
+        .addRaw(`| Module | Tag |\n| :--- | :--- |\n${rows}\n`)
+        .write();
+
+    core.setOutput('tags_json', JSON.stringify(tags));
+}
+
+// ---------------------------------------------------------------------------
+// Internal: proxy readiness probe
+// ---------------------------------------------------------------------------
+
+/**
+ * Poll `go list -m module@version` until the proxy serves the version.
+ * Needed between level pushes so the next level's `go mod tidy` can fetch
+ * the checksums for the just-published tags.
+ *
+ * @param {string} modPath  repo-relative path, e.g. "bindings/go/runtime"
+ * @param {string} version  semver, e.g. "v0.0.9"
+ * @param {import('@actions/core')} core
+ * @param {number} [retries]
+ * @param {number} [delayMs]
+ */
+async function waitForProxy(modPath, version, core, retries = 12, delayMs = 5000) {
+    const name = `${OCM_PREFIX}${modPath}`;
+    for (let i = 0; i < retries; i++) {
+        try {
+            go_(['list', '-m', `${name}@${version}`]);
+            core.info(`  proxy ready: ${name}@${version}`);
+            return;
+        } catch {
+            core.info(`  waiting for proxy (${i + 1}/${retries}): ${name}@${version}`);
+            await new Promise(r => setTimeout(r, delayMs));
+        }
+    }
+    throw new Error(`Proxy did not index ${name}@${version} after ${retries} attempts`);
+}
+
+// ---------------------------------------------------------------------------
+// Internal: check for staged changes
+// ---------------------------------------------------------------------------
+
+function hasStagedChanges() {
+    try { git(['diff', '--staged', '--quiet']); return false; } catch { return true; }
+}
+
+// ---------------------------------------------------------------------------
+// Step 3+4 — Sequential group-based release
+// ---------------------------------------------------------------------------
+
+/**
+ * For each dependency level (from groups_json):
+ *   1. Pin go.mod for changed modules (deps are already tagged from prior levels)
+ *   2. go mod tidy (proxy has the dep tags)
+ *   3. Commit go.mod + go.sum for this level
+ *   4. Create and push all tags for this level
+ *   5. Wait for proxy to index before moving to the next level
+ *
+ * After all binding levels: pin + tidy consumers, commit, push.
+ *
+ * Reads: GROUPS_JSON, CONSUMERS_JSON, TAGS_JSON, DRY_RUN
+ *
+ * @param {import('@actions/github-script').AsyncFunctionArguments} args
+ */
+export async function releaseGroups({core}) {
+    const repoRoot  = process.env.GITHUB_WORKSPACE ?? process.cwd();
+    const groups    = /** @type {string[][]} */ (JSON.parse(process.env.GROUPS_JSON  ?? '[]'));
+    const consumers = /** @type {string[]}   */ (JSON.parse(process.env.CONSUMERS_JSON ?? '[]'));
+    const tags      = /** @type {Record<string, string>} */ (JSON.parse(process.env.TAGS_JSON ?? '{}'));
+    const dryRun    = process.env.DRY_RUN === 'true';
+
+    const taggedSet = new Set(Object.keys(tags));
+    const allModules = groups.flat();
+
+    // Resolve all pins upfront — all target versions are known from the plan.
+    const allPins = resolvePins(
+        allModules, tags, consumers,
+        mod => internalDepsOf(repoRoot, mod),
+        latestTag,
+    );
+
+    // ── Binding levels ───────────────────────────────────────────────────────
+    for (const [level, group] of groups.entries()) {
+        const changed = group.filter(mod => taggedSet.has(mod));
+        if (!changed.length) {
+            core.info(`\nLevel ${level}: no changed modules — skipping`);
+            continue;
+        }
+
+        core.info(`\nLevel ${level}: ${changed.length} module(s) to release`);
+
+        // 1. Pin go.mod
+        for (const mod of changed) {
+            const modDir = join(repoRoot, mod);
+            for (const {name, version} of (allPins.get(mod) ?? [])) {
+                core.info(`  pin ${name}@${version} in ${mod}`);
+                if (!dryRun) go_(['mod', 'edit', `-require=${name}@${version}`], {cwd: modDir});
+            }
+        }
+
+        // 2. go mod tidy — proxy has tags from all previous levels
+        for (const mod of changed) {
+            core.info(`  tidy ${mod}`);
+            if (!dryRun) go_(['mod', 'tidy'], {cwd: join(repoRoot, mod)});
+        }
+
+        // 3. Commit go.mod + go.sum for this level
+        if (!dryRun) {
+            git(['add', ...changed.flatMap(m => [`${m}/go.mod`, `${m}/go.sum`])]);
+            if (hasStagedChanges()) {
+                const names = changed.map(m => tags[m]).join(', ');
+                git(['commit', '-s', '-m', `release: level ${level} — ${names}`]);
+            }
+        }
+
+        // 4. Create and push all tags for this level at once
+        const levelTags = changed.map(m => tags[m]);
+        for (const tag of levelTags) {
+            core.info(`  ${dryRun ? '[dry-run] ' : ''}tag ${tag}`);
+            if (!dryRun) git(['tag', '-a', '-m', `Release ${tag}`, tag]);
+        }
+        if (!dryRun) {
+            git(['push', 'origin', 'HEAD', ...levelTags.map(t => `refs/tags/${t}`)]);
+        }
+
+        // 5. Wait for proxy to index all tags before the next level runs tidy
+        if (!dryRun) {
+            for (const mod of changed) {
+                await waitForProxy(mod, tagToVersion(tags[mod]), core);
+            }
+        }
+    }
+
+    // ── Consumers ────────────────────────────────────────────────────────────
+    const consumerPinned = consumers.filter(c => (allPins.get(c) ?? []).length > 0);
+    if (consumerPinned.length) {
+        core.info('\nPinning and tidying consumers:');
+        for (const consumer of consumerPinned) {
+            const consumerDir = join(repoRoot, consumer);
+            for (const {name, version} of (allPins.get(consumer) ?? [])) {
+                core.info(`  pin ${name}@${version} in ${consumer}`);
+                if (!dryRun) go_(['mod', 'edit', `-require=${name}@${version}`], {cwd: consumerDir});
+            }
+            core.info(`  tidy ${consumer}`);
+            if (!dryRun) go_(['mod', 'tidy'], {cwd: consumerDir});
+        }
+
+        if (!dryRun) {
+            git(['add', ...consumerPinned.flatMap(c => [`${c}/go.mod`, `${c}/go.sum`])]);
+            if (hasStagedChanges()) {
+                git(['commit', '-s', '-m', 'release: pin and tidy consumers']);
+            }
+            git(['push', 'origin', 'HEAD']);
+        }
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────────────
+    const entries = Object.entries(tags);
     const heading = dryRun ? '🔍 Binding Release Plan (dry-run)' : '✅ Binding Release Complete';
     const rows = entries.map(([mod, tag]) => `| \`${mod}\` | \`${tag}\` |`).join('\n');
     await core.summary
