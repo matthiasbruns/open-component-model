@@ -1,6 +1,6 @@
 import assert from 'assert';
 import {
-  discoverModules, internalDepsOf, topoSort, groupByLevel,
+  discoverModules, internalDepsOf, topoSort, groupByLevel, executeRelease,
   bumpVersion, tagToVersion, latestVersionTag, computeNextTag,
   hasChanges, detectBump, pinsFor, resolvePins,
 } from './release-bindings.js';
@@ -300,6 +300,86 @@ console.log('Testing resolvePins...');
     const pins = resolvePins(ordered, tags, [], mod => mod === 'bindings/go/oci' ? ['bindings/go/runtime'] : [], mod => latestTags[mod] ?? null);
     assert.deepStrictEqual(pins.get('bindings/go/oci')?.[0].version, 'v0.0.9', 'new tag beats latestTag');
   }
+}
+
+// ----------------------------------------------------------
+// executeRelease
+// ----------------------------------------------------------
+console.log('Testing executeRelease...');
+
+{
+  // Graph: runtime (level 0) ← blob (level 1) ← transfer (level 2)
+  // Only runtime and blob are being released this run; transfer is unchanged.
+  const groups = [
+    ['bindings/go/runtime'],
+    ['bindings/go/blob'],
+    ['bindings/go/transfer'],
+  ];
+  const tags = {
+    'bindings/go/runtime': 'bindings/go/runtime/v0.0.9',
+    'bindings/go/blob':    'bindings/go/blob/v0.0.15',
+  };
+  const allPins = new Map([
+    ['bindings/go/runtime',  []],
+    ['bindings/go/blob',     [{ name: 'ocm.software/open-component-model/bindings/go/runtime', version: 'v0.0.9' }]],
+    ['bindings/go/transfer', [{ name: 'ocm.software/open-component-model/bindings/go/blob',    version: 'v0.0.15' }]],
+    ['cli',                  [{ name: 'ocm.software/open-component-model/bindings/go/blob',    version: 'v0.0.15' }]],
+  ]);
+
+  const calls = [];
+  const ops = {
+    pin:    (name, version, dir) => calls.push({ op: 'pin',    name, version, dir }),
+    tidy:   (dir)                => calls.push({ op: 'tidy',   dir }),
+    add:    (files)              => calls.push({ op: 'add',    files }),
+    commit: (msg)                => calls.push({ op: 'commit', msg }),
+    tag:    (tag)                => calls.push({ op: 'tag',    tag }),
+    push:   (refs)               => calls.push({ op: 'push',   refs }),
+    wait:   async (mod, ver)     => calls.push({ op: 'wait',   mod, ver }),
+  };
+
+  await executeRelease(groups, tags, ['cli'], allPins, '/repo', ops);
+
+  // Level 0 (runtime): no pins to apply, tidy, commit, tag, push, wait
+  const runtimeOps = calls.filter(c => c.dir?.includes('runtime') || c.mod === 'bindings/go/runtime');
+  assert.ok(runtimeOps.some(c => c.op === 'tidy'),   'runtime: tidy called');
+  assert.ok(runtimeOps.some(c => c.op === 'wait'),   'runtime: wait called after push');
+
+  // Level 1 (blob): pin runtime, tidy, commit, tag, push, wait
+  assert.ok(calls.some(c => c.op === 'pin' && c.name.endsWith('runtime') && c.dir.includes('blob')),
+    'blob: runtime pinned');
+  assert.ok(calls.some(c => c.op === 'tidy' && c.dir.includes('blob')),  'blob: tidy called');
+  assert.ok(calls.some(c => c.op === 'tag'  && c.tag === 'bindings/go/blob/v0.0.15'), 'blob: tagged');
+  assert.ok(calls.some(c => c.op === 'wait' && c.mod === 'bindings/go/blob'),         'blob: wait called');
+
+  // Level 2 (transfer): unchanged — no tidy, no tag, no wait for transfer
+  assert.ok(!calls.some(c => c.op === 'tidy' && c.dir?.includes('transfer')), 'transfer: skipped (unchanged)');
+  assert.ok(!calls.some(c => c.op === 'tag'  && c.tag?.includes('transfer')), 'transfer: no tag created');
+
+  // Consumers: cli pinned + tidied after all levels
+  const cliPinIdx  = calls.findIndex(c => c.op === 'pin'  && c.dir.includes('cli'));
+  const blobWaitIdx = calls.findLastIndex(c => c.op === 'wait');
+  assert.ok(cliPinIdx > blobWaitIdx, 'cli pinned only after all binding waits');
+  assert.ok(calls.some(c => c.op === 'tidy' && c.dir.includes('cli')), 'cli: tidy called');
+
+  // Order invariant: for each binding level, tidy before tag, tag before wait
+  const tidyBlobIdx = calls.findIndex(c => c.op === 'tidy' && c.dir.includes('blob'));
+  const tagBlobIdx  = calls.findIndex(c => c.op === 'tag'  && c.tag.includes('blob'));
+  const waitBlobIdx = calls.findIndex(c => c.op === 'wait' && c.mod.includes('blob'));
+  assert.ok(tidyBlobIdx < tagBlobIdx,  'tidy before tag');
+  assert.ok(tagBlobIdx  < waitBlobIdx, 'tag before wait');
+}
+
+{
+  // All modules unchanged → no ops except consumer if it has pins
+  const groups = [['bindings/go/runtime']];
+  const calls = [];
+  const ops = {
+    pin: () => calls.push('pin'), tidy: () => calls.push('tidy'),
+    add: () => {}, commit: () => {}, tag: () => calls.push('tag'),
+    push: () => {}, wait: async () => {},
+  };
+  await executeRelease(groups, {}, [], new Map(), '/repo', ops);
+  assert.strictEqual(calls.length, 0, 'nothing released when no tags');
 }
 
 // ----------------------------------------------------------
