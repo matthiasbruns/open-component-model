@@ -187,8 +187,8 @@ export async function discoverModules({ core, execSyncFn = _execSync }) {
     ? computeAffectedSet(changedBindings, bindingModules, dependentsOf)
     : bindingModules;
 
-  // 4. Integration subset of the affected set
-  const { integrationTestModules } = splitByTestability(affectedBindings, execSyncFn);
+  // 4. Unit and integration subsets of the affected set
+  const { unitTestModules, integrationTestModules } = splitByTestability(affectedBindings, execSyncFn);
 
   // 5. Consumer impact
   const affectedSet = new Set(affectedBindings);
@@ -197,12 +197,14 @@ export async function discoverModules({ core, execSyncFn = _execSync }) {
 
   core.setOutput('modules_json', JSON.stringify(allModules));
   core.setOutput('affected_bindings_json', JSON.stringify(affectedBindings));
+  core.setOutput('affected_unit_json', JSON.stringify(unitTestModules));
   core.setOutput('affected_integration_json', JSON.stringify(integrationTestModules));
   core.setOutput('test_cli', String(testCLI));
   core.setOutput('test_controller', String(testController));
 
   console.log('📦 All modules:', allModules.length);
   console.log('🎯 Affected bindings:', affectedBindings);
+  console.log('🧪 Affected unit:', unitTestModules);
   console.log('🧬 Affected integration:', integrationTestModules);
   console.log('🔧 Test CLI:', testCLI, '| Test Controller:', testController);
 }

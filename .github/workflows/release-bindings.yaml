@@ -57,6 +57,7 @@ jobs:
       changed_modules_json:     ${{ steps.plan.outputs.changed_modules_json }}
       skipped_modules_json:     ${{ steps.plan.outputs.skipped_modules_json }}
       integration_modules_json: ${{ steps.plan.outputs.integration_modules_json }}
+      unit_test_modules_json:   ${{ steps.testability.outputs.unit_test_modules_json }}
       head_commit:              ${{ steps.plan.outputs.head_commit }}
       pseudo_version:           ${{ steps.plan.outputs.pseudo_version }}
     steps:
@@ -118,6 +119,16 @@ jobs:
             const { planRelease } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
             await planRelease({ core });
 
+      - name: Split modules by testability
+        id: testability
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          MODULES_JSON: ${{ steps.graph.outputs.ordered_json }}
+        with:
+          script: |
+            const { splitTestModules } = await import('${{ github.workspace }}/.github/scripts/discover-modules.js');
+            await splitTestModules({ core });
+
       - name: Upload plan artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -134,7 +145,8 @@ jobs:
     needs: [plan]
     uses: ./.github/workflows/test-bindings.yaml
     with:
-      integration_modules_json: ${{ needs.plan.outputs.integration_modules_json }}
+      unit_modules_json:         ${{ needs.plan.outputs.unit_test_modules_json }}
+      integration_modules_json:  ${{ needs.plan.outputs.integration_modules_json }}
 
   # ---------------------------------------------------------------------------
   # 3. Gate — human approval before any tags are created

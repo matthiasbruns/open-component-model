@@ -20,6 +20,7 @@ jobs:
     outputs:
       modules_json:              ${{ steps.discover.outputs.modules_json }}
       affected_bindings_json:    ${{ steps.discover.outputs.affected_bindings_json }}
+      affected_unit_json:        ${{ steps.discover.outputs.affected_unit_json }}
       affected_integration_json: ${{ steps.discover.outputs.affected_integration_json }}
       test_cli:                  ${{ steps.discover.outputs.test_cli }}
       test_controller:           ${{ steps.discover.outputs.test_controller }}
@@ -89,7 +90,7 @@ jobs:
     needs: discover_modules
     uses: ./.github/workflows/test-bindings.yaml
     with:
-      affected_bindings_json:    ${{ needs.discover_modules.outputs.affected_bindings_json }}
+      unit_modules_json:         ${{ needs.discover_modules.outputs.affected_unit_json }}
       integration_modules_json:  ${{ needs.discover_modules.outputs.affected_integration_json }}
 
   generate:
