@@ -71,15 +71,9 @@ Four concrete problems had to be solved:
 
 ### CI strategy
 
-* **Change-based filtering**: discover all modules dynamically. On PR, test only the modules that changed.
-* **Always test all bindings**: discover all modules dynamically and test every binding on every PR.
-
-### Sparse-checkout strategy
-
-* **Full checkout for lint/unit, sparse for integration**: lint and unit tests check out the full repository so
-  `go.work` covers all modules. Integration tests use sparse-checkout per module since they are I/O-bound and
-  parallelism helps.
-* **Per-module matrix with sparse-checkout everywhere**: each CI job checks out only its module.
+* **Graph-aware change-based filtering**: on PR, build the full dependency graph from `go.mod` files, detect
+  which modules changed, and test the changed modules plus every direct and indirect dependent.
+* **Always test all bindings**: test every binding on every PR regardless of what changed.
 
 ### Release strategy
 
@@ -90,26 +84,25 @@ Four concrete problems had to be solved:
 
 ## Decision Outcome
 
-Keep Go modules with a git-ignored `go.work`, always test all bindings in CI, and use the automated phased bulk release
-as the canonical path. The manual per-module release is retained for isolated fixes and for bootstrapping new
-bindings. Lint uses a full checkout. Unit and integration tests use sparse-checkout in a parallel matrix.
+Keep Go modules with a git-ignored `go.work`, use graph-aware change-based filtering in CI, and use the automated
+phased bulk release as the canonical path. The manual per-module release is retained for isolated fixes and for
+bootstrapping new bindings. All CI jobs use a full checkout with `go.work` enabled.
 
 **Why keep Go modules over a shared library:** Ditching Go modules would eliminate independent versioning, making it
 impossible for external consumers to take only the bindings they need at a specific version. The binding boundary model
 has value; the friction was in the tooling around it, not in the model itself. Adding `go.work` recovers the
 developer-experience benefit without sacrificing the boundary model.
 
-**Why always test all bindings over change-based filtering:** Unit tests for all bindings run as a single
-`go test ./bindings/go/...` invocation — one job, one runner, shared build cache. The cost is low enough
-that graph-aware change filtering adds complexity without meaningful benefit. Always testing everything
-also gives a stronger correctness guarantee with no filtering logic to maintain.
+**Why graph-aware filtering over always-test-all:** Testing every binding on every PR wastes compute on changes
+that cannot affect unrelated modules. The dependency graph derived from `go.mod` files gives an exact affected set —
+the changed modules plus all direct and indirect dependents. This keeps feedback fast without sacrificing regression
+coverage, because a module is only skipped when the graph proves it cannot be affected.
 
-**Why the phased bulk release over manual per-module releases:** A phased bulk release computes next tags in dependency
-order, runs tests, requires human review of the plan before any tags are pushed, and pins consumer `go.mod` files
-(`cli`, `kubernetes/controller`) atomically in the same release commit. Manual per-module releases cannot guarantee
-dependency ordering and create a consistency window (see *Release Strategy* below). The manual workflow is kept as an
-escape hatch for genuine single-module fixes with no consumers to update, and as the mechanism for initially
-releasing new bindings.
+**Why the phased bulk release over manual per-module releases:** A phased bulk release computes next tags in
+dependency order, runs tests, requires human review of the plan before any tags are pushed, and pins consumer
+`go.mod` files (`cli`, `kubernetes/controller`) atomically. Manual per-module releases cannot guarantee dependency
+ordering and create a consistency window (see *Release Strategy* below). The manual workflow is kept as an escape
+hatch for isolated fixes and for bootstrapping new bindings.
 
 ---
 
@@ -133,38 +126,21 @@ releasing new bindings.
 
 ### CI strategy
 
-**Always test all bindings (selected)**
+**Graph-aware change-based filtering (selected)**
 
-* **Pros:** Always catches cross-module regressions. Unit tests run in a single job via `task bindings/test`
-  (`go test ./bindings/go/...`): one runner, one Go setup, shared build cache.
-* **Cons:** All binding unit tests run on every code-touching PR. Docs-only PRs can be excluded via
-  `paths-ignore`. Integration tests run as a parallel matrix because they are I/O-bound (testcontainers,
-  live network calls) and `sigstore/integration` requires a different runner architecture.
+* **Pros:** Only the affected modules run on any given PR. The dependency graph derived from `go.mod` gives an
+  exact affected set — changed modules plus all direct and indirect dependents — so cross-module regressions
+  are still caught. New bindings are automatically included when they appear in the graph. `cli` and
+  `kubernetes/controller` are included when any of their binding imports are in the affected set, or when
+  their own code changes.
+* **Cons:** Requires building the dependency graph on every PR. Modules with no graph path to the changed code
+  are skipped, so a regression that manifests only at runtime without a compile-time dependency would be missed.
 
-**Change-based filtering (not selected)**
+**Always test all bindings (not selected)**
 
-* **Pros:** Faster PR feedback and lower CI cost on repositories with frequent small changes.
-* **Cons:** Misses cross-module regressions by design. Requires `dorny/paths-filter`, separate `ciChanged`/`envChanged`
-  signals, and special-cased expansion rules. Complexity grows with every new correctness gap discovered.
-
-### Sparse-checkout strategy
-
-**Full checkout for lint, sparse for unit and integration tests (selected)**
-
-* **Pros:** `task lint` runs `golangci-lint` across all modules in one pass via `go work edit -json`.
-  Unit tests use sparse-checkout scoped to `bindings/` so each module only downloads what it needs.
-  Integration tests run as a sparse-checkout matrix where parallelism genuinely helps (I/O-bound,
-  `sigstore/integration` needs a different runner). Sparse-checkout remains for `kubernetes/controller`
-  and `e2e`/`conformance` which have no reason to pull all of `bindings/`.
-* **Cons:** Lint downloads the full repository. Acceptable given the monorepo size and the simplicity
-  gained.
-
-**Per-module matrix with sparse-checkout (not selected)**
-
-* **Pros:** Each job downloads only its module + `bindings/`.
-* **Cons:** Each GitHub Actions matrix job gets its own runner. With 20+ modules every job pays for OS boot,
-  checkout, Go install, and tool install independently. For fast operations like lint and unit tests the
-  per-runner setup cost dominates actual work time, making the matrix slower wall-clock than a single job.
+* **Pros:** Guaranteed to catch any regression regardless of dependency structure.
+* **Cons:** Every code-touching PR pays the full test cost even for unrelated changes, which grows linearly with
+  the number of bindings.
 
 ### Release strategy
 
@@ -204,16 +180,20 @@ The authoritative Go version is stored in `.go-version` (repo root). All CI jobs
 `task init/go.work` uses `status: find go.work` so it is a no-op if the file already exists, but since it is
 git-ignored it will never be present after a fresh checkout.
 
-### Where sparse-checkout is used
+### Checkout strategy
 
-| Job                           | Sparse checkout                              | Workspace           |
-|-------------------------------|----------------------------------------------|---------------------|
-| `golangci_lint`               | full checkout                                | `task init/go.work` |
-| `test-bindings` unit          | `bindings/`                                  | `task init/go.work` |
-| `test-bindings` integration   | `bindings/<module>/integration` (per-matrix) | `task init/go.work` |
-| `cli` build                   | `cli/` + `.github/scripts`                   | none (go.mod only)  |
-| `kubernetes-controller` build | `kubernetes/controller/` + `.github/scripts` | none (go.mod only)  |
-| `e2e`, `conformance`          | module-specific + config                     | none                |
+All CI jobs that run binding or consumer tests use a full repository checkout so that `go.work` covers the
+complete module tree. Sparse-checkout is not used for test jobs — the workspace must see all modules to resolve
+cross-binding imports correctly.
+
+| Job                           | Checkout      | Workspace           |
+|-------------------------------|---------------|---------------------|
+| `golangci_lint`               | full          | `task init/go.work` |
+| `test-bindings` unit          | full          | `task init/go.work` |
+| `test-bindings` integration   | full          | `task init/go.work` |
+| `cli` build (release)         | `cli/` only   | none (go.mod only)  |
+| `kubernetes-controller` build | controller only | none (go.mod only) |
+| `e2e`, `conformance`          | module + config | none              |
 
 ---
 
@@ -329,20 +309,26 @@ automatic side-effect of the first bulk release that touches it.
 
 ## Implementation
 
-### Module discovery
+### Module discovery and affected-set computation
 
 `ci.yml` runs a `discover_modules` pre-job on every push and PR:
 
-1. `discoverModules()` enumerates all Go modules by inspecting `go.work` via `go work edit -json`.
-2. Each binding's Taskfile is probed for a `test/integration` target to build the integration matrix.
-3. Outputs: `modules_json` (all modules, for `golangci_lint`) and `integration_test_modules_json`
-   (bindings with an integration test target, for `test-bindings.yaml`).
+1. Enumerate all binding modules from `go.work` via `go work edit -json`.
+2. Build the full dependency graph from each module's `go.mod` using `go mod edit -json`.
+3. Detect which modules have changed files in the PR (`git diff --name-only origin/main...HEAD`).
+4. Walk the graph forward (dependents direction) from each changed module to find all direct and indirect
+   dependents. The union of changed modules and their dependents is the **affected set**.
+5. Determine whether `cli` is affected: `cli` changed directly, or any binding in the affected set is
+   imported by `cli`.
+6. Determine whether `kubernetes/controller` is affected: controller changed directly, or any binding in
+   the affected set appears in controller's `go.mod` imports.
+7. Output the affected binding set and the integration-test subset of it (modules with a `test/integration`
+   Taskfile target), plus flags for whether `cli` and `controller` tests should run.
 
-Lint (`task lint`) and unit tests (`task bindings/test`) run in single jobs with no discovery input —
-they operate across the full workspace. Integration tests use a matrix since each module is I/O-bound
-and `sigstore/integration` requires a different runner. Non-binding modules (`cli`, `kubernetes/controller`)
-are excluded and have dedicated workflows. Adding a new binding under `bindings/go/` automatically
-enrolls it in lint, unit tests, and — if it has a `test/integration` target — the integration matrix.
+Lint always runs across the full workspace regardless of what changed. All test jobs use a full checkout
+with `go.work` enabled so cross-binding resolution works without published tags. Adding a new binding under
+`bindings/go/` automatically enrolls it in the graph and in all downstream test decisions with no config
+change required.
 
 ### Dependency graph and topological sort
 
@@ -364,10 +350,10 @@ Using `go mod edit -json` (toolchain-authoritative) rather than regex parsing en
 
 ### Consumer trigger
 
-`pipeline.yml` triggers on changes to `cli/**`, `kubernetes/controller/**`, and `conformance/**`. Binding changes
-do not directly trigger the pipeline. Instead, API breakage in consumers is caught when the binding release
-workflow (`release-bindings.yaml`) pins consumers and the subsequent RC build runs with `GOWORK=off`, validating
-the pinned graph end-to-end before any tag is promoted.
+Consumer tests (`cli`, `kubernetes/controller`) are triggered by the affected-set computation in `discover_modules`,
+not by a static path filter. This means a binding change that reaches a consumer through the import graph triggers
+that consumer's tests, while an unrelated binding change does not. The `pipeline.yml` path filter continues to
+trigger the full consumer build pipeline on direct changes to `cli/**` or `kubernetes/controller/**`.
 
 ---
 

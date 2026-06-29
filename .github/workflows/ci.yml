@@ -18,8 +18,11 @@ jobs:
     name: "Discover Go Modules"
     runs-on: ubuntu-24.04-arm
     outputs:
-      modules_json: ${{ steps.discover.outputs.modules_json }}
-      integration_test_modules_json: ${{ steps.filtered_test.outputs.integration_test_modules_json }}
+      modules_json:              ${{ steps.discover.outputs.modules_json }}
+      affected_bindings_json:    ${{ steps.discover.outputs.affected_bindings_json }}
+      affected_integration_json: ${{ steps.discover.outputs.affected_integration_json }}
+      test_cli:                  ${{ steps.discover.outputs.test_cli }}
+      test_controller:           ${{ steps.discover.outputs.test_controller }}
     steps:
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
@@ -28,23 +31,22 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
+          fetch-depth: 0        # needed for git diff origin/<base>...HEAD
           persist-credentials: false
-      - name: Discover Go Modules
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Init workspace
+        run: task init/go.work
+      - name: Discover modules and compute affected set
         id: discover
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { discoverModules } = await import('${{ github.workspace }}/.github/scripts/discover-modules.js');
             await discoverModules({ core });
-      - name: Split binding modules by testability
-        id: filtered_test
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          MODULES_JSON: ${{ steps.discover.outputs.modules_json }}
-        with:
-          script: |
-            const { splitTestModules } = await import('${{ github.workspace }}/.github/scripts/discover-modules.js');
-            await splitTestModules({ core });
 
   golangci_lint:
     name: "golangci-lint"
@@ -87,7 +89,8 @@ jobs:
     needs: discover_modules
     uses: ./.github/workflows/test-bindings.yaml
     with:
-      integration_modules_json: ${{ needs.discover_modules.outputs.integration_test_modules_json }}
+      affected_bindings_json:    ${{ needs.discover_modules.outputs.affected_bindings_json }}
+      integration_modules_json:  ${{ needs.discover_modules.outputs.affected_integration_json }}
 
   generate:
     runs-on: ubuntu-24.04-arm
