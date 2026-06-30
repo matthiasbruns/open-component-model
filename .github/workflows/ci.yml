@@ -23,6 +23,9 @@ jobs:
       affected_unit_json:        ${{ steps.discover.outputs.affected_unit_json }}
       affected_integration_json: ${{ steps.discover.outputs.affected_integration_json }}
       affected_lint_json:        ${{ steps.discover.outputs.affected_lint_json }}
+      # Renovate OCM-monorepo group PRs bump internal binding pins.
+      # go.work would shadow the pin, so we disable it for these PRs.
+      validate_pins:             ${{ startsWith(github.head_ref, 'renovate/ocm-monorepo') }}
     steps:
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
@@ -87,6 +90,7 @@ jobs:
     with:
       unit_modules_json:         ${{ needs.discover_modules.outputs.affected_unit_json }}
       integration_modules_json:  ${{ needs.discover_modules.outputs.affected_integration_json }}
+      validate_pins:             ${{ needs.discover_modules.outputs.validate_pins == 'true' }}
 
   generate:
     runs-on: ubuntu-24.04-arm

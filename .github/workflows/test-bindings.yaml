@@ -17,6 +17,11 @@ on:
         type: string
         required: false
         default: '[]'
+      validate_pins:
+        description: "Run with GOWORK=off to validate go.mod pins (Renovate OCM-monorepo PRs)."
+        type: boolean
+        required: false
+        default: false
     outputs:
       unit_result:
         description: "Result of the unit test matrix ('success', 'failure', 'skipped')"
@@ -56,9 +61,12 @@ jobs:
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
       - name: Init workspace
+        if: ${{ !inputs.validate_pins }}
         run: task init/go.work
 
       - name: Run unit tests
+        env:
+          GOWORK: ${{ inputs.validate_pins && 'off' || '' }}
         run: task ${{ matrix.module }}:test
 
   integration:

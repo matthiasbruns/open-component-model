@@ -318,22 +318,30 @@ automatic side-effect of the first bulk release that touches it.
 
 `ci.yml` runs a `discover_modules` pre-job on every push and PR:
 
-1. Enumerate all binding modules from `go.work` via `go work edit -json`.
-2. Build the full dependency graph from each module's `go.mod` using `go mod edit -json`.
+1. Enumerate all Go modules from `go.work` via `go work edit -json`.
+2. Build the full dependency graph across all modules using `go mod edit -json` (bindings, `cli`,
+   `kubernetes/controller`, and any other module in the workspace).
 3. Detect which modules have changed files in the PR (`git diff --name-only origin/main...HEAD`).
 4. Walk the graph forward (dependents direction) from each changed module to find all direct and indirect
    dependents. The union of changed modules and their dependents is the **affected set**.
-5. Determine whether `cli` is affected: `cli` changed directly, or any binding in the affected set is
-   imported by `cli`.
-6. Determine whether `kubernetes/controller` is affected: controller changed directly, or any binding in
-   the affected set appears in controller's `go.mod` imports.
-7. Output the affected binding set and the integration-test subset of it (modules with a `test/integration`
-   Taskfile target), plus flags for whether `cli` and `controller` tests should run.
+5. Filter the affected set to binding modules only for the unit and integration test matrices. `cli` and
+   `kubernetes/controller` have dedicated workflows and are excluded from the binding test matrix.
+6. Output the affected sets for unit tests, integration tests, and lint.
 
-Lint always runs across the full workspace regardless of what changed. All test jobs use a full checkout
-with `go.work` enabled so cross-binding resolution works without published tags. Adding a new binding under
-`bindings/go/` automatically enrolls it in the graph and in all downstream test decisions with no config
-change required.
+All test jobs use a full checkout with `go.work` enabled so cross-binding resolution works without
+published tags. If a developer adds a new binding but forgets to update `go.work`, the CI fails loudly
+— go.work is the source of truth, not a generated file.
+
+### Renovate pin-validation mode
+
+Renovate's `ocm-monorepo` group bumps internal binding versions across `go.mod` files. Running these
+PRs with `go.work` active would shadow the pinned versions — the workspace resolves binding modules
+from disk and the tests would pass even if the pin is wrong.
+
+When the PR branch matches `renovate/ocm-monorepo*`, `discover_modules` sets `validate_pins: true`.
+The binding test matrix then runs with `GOWORK=off`, validating that the pinned versions actually
+work standalone without workspace override. The detection is tied directly to the Renovate group slug
+(`groupSlug: 'ocm-monorepo'` in `renovate.json5`) so no go.mod content parsing is needed.
 
 ### Dependency graph and topological sort
 
