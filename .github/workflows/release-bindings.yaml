@@ -1,0 +1,312 @@
+name: Release Bindings
+
+# Phased binding release with a human gate before any tags are pushed:
+#
+#  1. plan   — discover modules, compute next tags, detect breaking changes
+#  2. test   — run unit tests for every changed module in parallel
+#  3. gate   — environment approval: reviewer sees plan + test results
+#  4. release — pin go.mods, commit, create signed tags, push
+#
+# Callers (release.yml) receive tags_json after the release job completes.
+# The gate uses the 'release' GitHub environment — configure required
+# reviewers there to control who can approve a binding release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the release plan without pushing commits or tags"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      dry_run:
+        type: boolean
+        default: false
+      consumers_json:
+        description: "JSON array of consumer module paths to pin after binding release (e.g. cli, controller)."
+        type: string
+        default: '["cli","kubernetes/controller"]'
+    outputs:
+      tags_json:
+        description: "JSON object mapping binding module paths to their new tags"
+        value: ${{ jobs.release.outputs.tags_json }}
+
+permissions:
+  contents: read
+
+concurrency:
+  # Shared with release-go-submodule.yaml — prevents a manual single-module release
+  # from racing with the automated bulk binding release (and vice versa).
+  cancel-in-progress: false
+  group: binding-release
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Plan — what will be released and at what version
+  # ---------------------------------------------------------------------------
+  plan:
+    name: Plan Binding Release
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      ordered_json:             ${{ steps.graph.outputs.ordered_json }}
+      groups_json:              ${{ steps.graph.outputs.groups_json }}
+      tags_json:                ${{ steps.plan.outputs.tags_json }}
+      from_tags_json:           ${{ steps.plan.outputs.from_tags_json }}
+      bump_kinds_json:          ${{ steps.plan.outputs.bump_kinds_json }}
+      changed_modules_json:     ${{ steps.plan.outputs.changed_modules_json }}
+      skipped_modules_json:     ${{ steps.plan.outputs.skipped_modules_json }}
+      integration_modules_json: ${{ steps.plan.outputs.integration_modules_json }}
+      unit_test_modules_json:   ${{ steps.testability.outputs.unit_test_modules_json }}
+      head_commit:              ${{ steps.plan.outputs.head_commit }}
+      pseudo_version:           ${{ steps.plan.outputs.pseudo_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Fetch tags from upstream
+        # On forks, origin has no binding tags — fetch them read-only from the
+        # canonical repo so latestTag() sees the real version history.
+        # On the main repo this is a no-op (upstream == origin).
+        # The upstream remote has no credentials: push to it is structurally impossible.
+        run: |
+          git remote add upstream https://github.com/open-component-model/open-component-model.git || true
+          git fetch upstream --tags --force --no-recurse-submodules
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .go-version
+          cache: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '25'
+
+      - name: Install script dependencies
+        working-directory: .github/scripts
+        run: npm ci
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build dependency graph
+        id: graph
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { buildGraph } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
+            await buildGraph({ core });
+
+      - name: Plan release
+        id: plan
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          ORDERED_JSON: ${{ steps.graph.outputs.ordered_json }}
+        with:
+          script: |
+            const { planRelease } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
+            await planRelease({ core });
+
+      - name: Split modules by testability
+        id: testability
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          MODULES_JSON: ${{ steps.graph.outputs.ordered_json }}
+        with:
+          script: |
+            const { splitTestModules } = await import('${{ github.workspace }}/.github/scripts/discover-modules.js');
+            await splitTestModules({ core });
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: binding-release-plan
+          path: ${{ runner.temp }}/changelogs.json
+          retention-days: 7
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 2. Tests — reuses test-bindings.yaml (same workflow as CI uses on PRs)
+  # ---------------------------------------------------------------------------
+  test:
+    name: "Tests"
+    needs: [plan]
+    uses: ./.github/workflows/test-bindings.yaml
+    with:
+      unit_modules_json:         ${{ needs.plan.outputs.unit_test_modules_json }}
+      integration_modules_json:  ${{ needs.plan.outputs.integration_modules_json }}
+
+  # ---------------------------------------------------------------------------
+  # 3. Gate — human approval before any tags are created
+  # ---------------------------------------------------------------------------
+  gate:
+    name: Await Release Approval
+    needs: [plan, test]
+    # Proceed if tests passed or were skipped (no changed modules); block on failure.
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-24.04-arm
+    environment:
+      name: release
+    steps:
+      - name: Download plan artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: binding-release-plan
+          path: ${{ runner.temp }}/plan
+
+      - name: Release plan summary
+        env:
+          TAGS_JSON:       ${{ needs.plan.outputs.tags_json }}
+          FROM_TAGS_JSON:  ${{ needs.plan.outputs.from_tags_json }}
+          BUMP_KINDS_JSON: ${{ needs.plan.outputs.bump_kinds_json }}
+          CHANGELOGS_FILE: ${{ runner.temp }}/plan/changelogs.json
+          CHANGED_JSON:    ${{ needs.plan.outputs.changed_modules_json }}
+          SKIPPED_JSON:    ${{ needs.plan.outputs.skipped_modules_json }}
+          HEAD_COMMIT:     ${{ needs.plan.outputs.head_commit }}
+          PSEUDO_VERSION:  ${{ needs.plan.outputs.pseudo_version }}
+          BRANCH:          ${{ github.ref_name }}
+          UNIT_RESULT:     ${{ needs.test.outputs.unit_result }}
+          INTEG_RESULT:    ${{ needs.test.outputs.integration_result }}
+        run: |
+          {
+            echo "## 🔖 Binding Release Plan"
+            echo ""
+            echo "**Branch:** \`$BRANCH\` | **Commit:** \`${HEAD_COMMIT:0:12}\`"
+            echo ""
+
+            echo "### 🏷 New semver tags"
+            echo "| Module | From | To | Bump |"
+            echo "| :--- | :--- | :--- | :--- |"
+            echo "$TAGS_JSON" | jq -r --argjson from "$FROM_TAGS_JSON" --argjson bumps "$BUMP_KINDS_JSON" \
+              'to_entries[] | "| `\(.key)` | `\($from[.key] // "(none)")` | `\(.value)` | \(if $bumps[.key] == "minor" then "**minor** ⚠ breaking" else "patch" end) |"'
+            echo ""
+
+            # Untagged modules that will be pinned by commit rather than a semver tag
+            UNTAGGED=$(echo "$CHANGED_JSON" | jq -r --argjson tags "$TAGS_JSON" \
+              '[.[] | select($tags[.] == null)] | if length > 0 then . else empty end')
+            if [ -n "$UNTAGGED" ]; then
+              echo "### 📌 Pinned by commit (no semver tag yet)"
+              echo "| Module | Version |"
+              echo "| :--- | :--- |"
+              echo "$UNTAGGED" | jq -r '.[] | "| `\(.)` | `'"$PSEUDO_VERSION"'` |"'
+              echo ""
+            fi
+
+            # Modules skipped because nothing changed since their last release
+            SKIPPED_LIST=$(echo "$SKIPPED_JSON" | jq -r 'if length > 0 then map("`\(.)`") | join(", ") else empty end')
+            if [ -n "$SKIPPED_LIST" ]; then
+              echo "### ⏭ Skipped (unchanged since last release)"
+              echo "$SKIPPED_LIST"
+              echo ""
+            fi
+
+            echo "### 🧪 Test results"
+            echo "| Suite | Result |"
+            echo "| :--- | :--- |"
+            echo "| Unit tests | $UNIT_RESULT |"
+            echo "| Integration tests | $INTEG_RESULT |"
+            echo ""
+
+            # Per-module changelogs from artifact — same format as release-go-submodule.yaml
+            echo "### 📋 Changelogs"
+            echo "$TAGS_JSON" | jq -r 'keys[]' | while IFS= read -r mod; do
+              tag=$(echo "$TAGS_JSON" | jq -r --arg m "$mod" '.[$m]')
+              log=$(jq -r --arg m "$mod" '.[$m] // "No changes"' "$CHANGELOGS_FILE")
+              echo "<details><summary><code>$tag</code></summary>"
+              echo ""
+              echo "$log"
+              echo ""
+              echo "</details>"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # 4. Release — pin go.mods, commit, tag, push (only after approval)
+  # ---------------------------------------------------------------------------
+  release:
+    name: Release Binding Modules
+    needs: [plan, gate]
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-24.04-arm
+    environment:
+      name: go-modules
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      tags_json: ${{ steps.publish.outputs.tags_json }}
+    steps:
+      - name: Generate App Token
+        id: token
+        # continue-on-error so forks without bot secrets fall back to github.token below.
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.OCMBOT_APP_ID }}
+          private-key: ${{ secrets.OCMBOT_PRIV_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ steps.token.outputs.token || github.token }}
+          # persist-credentials kept — git push authenticates via the stored app token
+
+      - name: Fetch tags from upstream
+        # pinDeps calls latestTag() to distinguish semver-tagged deps from untagged ones.
+        # Without upstream tags it would incorrectly use go get @commit for tagged deps.
+        run: |
+          git remote add upstream https://github.com/open-component-model/open-component-model.git || true
+          git fetch upstream --tags --force --no-recurse-submodules
+
+      - name: Setup git identity
+        env:
+          GIT_USER: ${{ github.actor }}
+        run: |
+          git config --global user.name "$GIT_USER"
+          git config --global user.email "$GIT_USER@users.noreply.github.com"
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .go-version
+          cache: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '25'
+
+      - name: Install script dependencies
+        working-directory: .github/scripts
+        run: npm ci
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release groups
+        id: publish
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          GROUPS_JSON:    ${{ needs.plan.outputs.groups_json }}
+          CONSUMERS_JSON: ${{ inputs.consumers_json || '["cli","kubernetes/controller"]' }}
+          TAGS_JSON:      ${{ needs.plan.outputs.tags_json }}
+          DRY_RUN:        ${{ inputs.dry_run == true && 'true' || 'false' }}
+          GITHUB_TOKEN:   ${{ steps.token.outputs.token || github.token }}
+        with:
+          script: |
+            const { releaseGroups } = await import('${{ github.workspace }}/.github/scripts/release-bindings.js');
+            await releaseGroups({ core });

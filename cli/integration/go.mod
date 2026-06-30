@@ -18,10 +18,10 @@ require (
 	ocm.software/open-component-model/bindings/go/credentials v0.0.14
 	ocm.software/open-component-model/bindings/go/ctf v0.4.1
 	ocm.software/open-component-model/bindings/go/descriptor/normalisation v0.0.0-20260623114549-5fc54191d79d
-	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260623111413-06562f059855
+	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260625065312-d374c10f9e61
 	ocm.software/open-component-model/bindings/go/descriptor/v2 v2.0.3-alpha3
 	ocm.software/open-component-model/bindings/go/helm v0.0.0-20260623120340-cf4ce70f63f4
-	ocm.software/open-component-model/bindings/go/oci v0.0.46
+	ocm.software/open-component-model/bindings/go/oci v0.0.47
 	ocm.software/open-component-model/bindings/go/repository v0.0.10
 	ocm.software/open-component-model/bindings/go/runtime v0.0.8
 	ocm.software/open-component-model/bindings/go/signing v0.0.0-20260623111413-06562f059855
@@ -165,7 +165,7 @@ require (
 	ocm.software/open-component-model/bindings/go/constructor v0.0.10 // indirect
 	ocm.software/open-component-model/bindings/go/dag v0.0.6 // indirect
 	ocm.software/open-component-model/bindings/go/gpg v0.0.0-20260623114549-5fc54191d79d // indirect
-	ocm.software/open-component-model/bindings/go/http v0.0.0-20260623120340-cf4ce70f63f4 // indirect
+	ocm.software/open-component-model/bindings/go/http v0.0.0-20260625071756-d21b8e0a6de0 // indirect
 	ocm.software/open-component-model/bindings/go/input/dir v0.0.4 // indirect
 	ocm.software/open-component-model/bindings/go/input/file v0.0.5 // indirect
 	ocm.software/open-component-model/bindings/go/input/utf8 v0.0.0-20260623120340-cf4ce70f63f4 // indirect

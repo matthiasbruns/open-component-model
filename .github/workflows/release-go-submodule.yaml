@@ -26,6 +26,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Shared with release-bindings.yaml — prevents a manual single-module release
+  # from racing with the automated bulk binding release (and vice versa).
+  # cancel-in-progress: false so a running release is never cancelled, only queued.
+  cancel-in-progress: false
+  group: binding-release
+
 jobs:
   version:
     runs-on: ubuntu-24.04-arm
@@ -49,78 +56,43 @@ jobs:
             exit 1
           fi
 
-      - name: Get latest tag
-        id: get_tag
-        env:
-          INPUT_PATH: ${{ github.event.inputs.path }}
-        run: |
-          path="${INPUT_PATH}"
-          suffix=$(basename "$path")
-          major_version=$(echo "$suffix" | sed -n 's/^v\([0-9][0-9]*\)$/\1/p')
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '25'
 
-          if [ -n "$major_version" ]; then
-            tag_path="${path%/v$major_version}"
-          else
-            tag_path="$path"
-          fi
+      - name: Install script dependencies
+        working-directory: .github/scripts
+        run: npm ci
 
-          prefix="${tag_path}/v"
-          latest=$(git tag --list "${prefix}[0-9]*" | sort -V | tail -n1 || echo "")
-          if [ -z "$latest" ]; then
-            latest_commit=$(git rev-list --max-parents=0 HEAD)
-            if [ -n "$major_version" ]; then
-              version="${major_version}.0.0"
-            else
-              version="0.0.0"
-            fi
-          else
-            latest_commit=$(git rev-list -n 1 "$latest")
-            version=${latest#${prefix}}
-          fi
-
-          echo "latest_commit=$latest_commit" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag_path=$tag_path" >> "$GITHUB_OUTPUT"
-
-      - name: Calculate new version
+      - name: Compute next version
         id: version
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          PREV_VERSION: ${{ steps.get_tag.outputs.version }}
-          INPUT_BUMP: ${{ github.event.inputs.bump }}
-          INPUT_SUFFIX: ${{ github.event.inputs.suffix }}
-          TAG_PATH: ${{ steps.get_tag.outputs.tag_path }}
-        run: |
-          version="${PREV_VERSION}"
-          bump="${INPUT_BUMP}"
-          clean_version=$(echo "$version" | sed -E 's/^v//' | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')
-          major=$(echo "$clean_version" | cut -d. -f1)
-          minor=$(echo "$clean_version" | cut -d. -f2)
-          patch=$(echo "$clean_version" | cut -d. -f3)
+          MOD_PATH: ${{ github.event.inputs.path }}
+          BUMP: ${{ github.event.inputs.bump }}
+          SUFFIX: ${{ github.event.inputs.suffix }}
+        with:
+          script: |
+            const { execFileSync } = await import('child_process');
+            const { computeNextTag, latestTag } = await import('${{ github.workspace }}/.github/scripts/submodule-version.js');
+            const modPath = process.env.MOD_PATH;
 
-          major=${major:-0}
-          minor=${minor:-0}
-          patch=${patch:-0}
+            const tag = computeNextTag(modPath, process.env.BUMP, { suffix: process.env.SUFFIX || '' });
+            core.info(`Next tag: ${tag}`);
+            core.setOutput('new_tag', tag);
 
-          case "$bump" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-            none) ;;
-            *) echo "Invalid bump: $bump"; exit 1 ;;
-          esac
-
-          new_tag="${TAG_PATH}/v${major}.${minor}.${patch}"
-
-          if [ -n "${INPUT_SUFFIX}" ]; then
-            new_tag="${new_tag}-${INPUT_SUFFIX}"
-          fi
-
-          echo "new_tag=$new_tag" >> "$GITHUB_OUTPUT"
+            // Resolve the commit the current latest tag points at (changelog range start).
+            const current = latestTag(modPath);
+            const fromCommit = current
+              ? execFileSync('git', ['rev-list', '-n', '1', current], { encoding: 'utf-8' }).trim()
+              : execFileSync('git', ['rev-list', '--max-parents=0', 'HEAD'], { encoding: 'utf-8' }).trim();
+            core.setOutput('from_commit', fromCommit);
 
       - name: Build changelog
         id: changelog
         env:
-          FROM_COMMIT: ${{ steps.get_tag.outputs.latest_commit }}
+          FROM_COMMIT: ${{ steps.version.outputs.from_commit }}
           INPUT_PATH: ${{ github.event.inputs.path }}
           NEW_TAG: ${{ steps.version.outputs.new_tag }}
         run: |

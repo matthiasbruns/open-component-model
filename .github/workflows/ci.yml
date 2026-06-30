@@ -2,15 +2,13 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
+      - '**/*.md'
   push:
     branches:
-    - main
-
-env:
-  # Check Only Changed Modules
-  # If true, only changed modules will be analyzed.
-  # If false, all discovered modules will be analyzed.
-  check_only_changed: ${{ github.event_name == 'pull_request' }}
+      - main
 
 permissions:
   contents: read
@@ -19,17 +17,15 @@ jobs:
   discover_modules:
     name: "Discover Go Modules"
     runs-on: ubuntu-24.04-arm
-    permissions:
-      pull-requests: read
     outputs:
-      # modules_json = all modules on push or when CI workflow changed, else changed modules only
-      modules_json: ${{ steps.filtered.outputs.modules_json }}
-      # lint_modules_json = all modules when .env changed (lint version bump), else same as modules_json
-      lint_modules_json: ${{ steps.filtered.outputs.lint_modules_json }}
-      integration_test_modules_json: ${{ steps.filtered_test.outputs.integration_test_modules_json }}
-      unit_test_modules_json: ${{ steps.filtered_test.outputs.unit_test_modules_json }}
-    env:
-      DIR: ${{ github.workspace }}
+      modules_json:              ${{ steps.discover.outputs.modules_json }}
+      affected_modules_json:     ${{ steps.discover.outputs.affected_modules_json }}
+      affected_unit_json:        ${{ steps.discover.outputs.affected_unit_json }}
+      affected_integration_json: ${{ steps.discover.outputs.affected_integration_json }}
+      affected_lint_json:        ${{ steps.discover.outputs.affected_lint_json }}
+      # Renovate OCM-monorepo group PRs bump internal binding pins.
+      # go.work would shadow the pin, so we disable it for these PRs.
+      validate_pins:             ${{ startsWith(github.head_ref, 'renovate/ocm-monorepo') }}
     steps:
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
@@ -38,324 +34,63 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
+          fetch-depth: 0        # needed for git diff origin/<base>...HEAD
           persist-credentials: false
-      # Detect .env changes so lint runs on all modules when the golangci-lint version changes
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
-        id: env_changes
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          filters: |
-            env:
-              - '.env'
-      # Detect CI workflow changes to rebuild/test all modules
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
-        id: ci_changes
-        with:
-          filters: |
-            ci:
-              - '.github/workflows/ci.yml'
-      - name: Discover Go Modules
+          go-version-file: .go-version
+          cache: false
+      - name: Verify go.work is in sync with the module tree
+        run: task verify/go.work
+      - name: Discover modules and compute affected set
         id: discover
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
-            const { execSync } = require('child_process');
-            
-            // Get all Go modules using task
-            const modulesOutput = execSync('task go_modules --output interleaved', { encoding: 'utf-8' });
-            const modules = modulesOutput.split('\n').filter(Boolean);
-            
-            // Generate filters for paths-filter
-            const filters = modules.map(module => {
-              const lines = [`${module}:`];
-              
-              lines.push(` - "${module}/**"`);
-
-              // If this is an integration module, also trigger on parent module changes
-              if (module.includes('/integration')) {
-                const parentModule = module.split('/integration')[0];
-                lines.push(` - "${parentModule}/**"`);
-                console.log(`🔍 Detected integration test module: ${module}`);
-                console.log(`   └─ Linked to parent module: ${parentModule}`);
-              }
-              
-              return lines.join('\n');
-            }).join('\n');
-            
-            // Set outputs
-            core.setOutput('modules_json', JSON.stringify(modules));
-            core.setOutput('filters', filters);
-            
-            // Log for debugging
-            console.log('📦 Detected modules:', modules);
-            console.log('🎯 Generated filters:', filters);
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
-        id: changes
-        with:
-          filters: ${{ steps.discover.outputs.filters }}
-      - name: Filter JSONs Based on Changes
-        id: filtered
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          MODULES_JSON: ${{ steps.discover.outputs.modules_json }}
-          CHANGE_JSON: ${{ steps.changes.outputs.changes }}
-          ENV_CHANGED: ${{ steps.env_changes.outputs.env }}
-          CI_CHANGED: ${{ steps.ci_changes.outputs.ci }}
-        with:
-          # Decides which Go modules to build/lint/test.
-          # Three branches, in priority order:
-          #   1. CI workflow changed          - build, lint & test everything
-          #   2. PR (check_only_changed=true) - build & test only changed modules;
-          #      if .env also changed, lint all modules (version bump)
-          #   3. Push to main                 - everything
-          script: |
-            const modulesJson = JSON.parse(process.env.MODULES_JSON || '[]');
-            const changeJson = JSON.parse(process.env.CHANGE_JSON || '[]');
-            const envChanged = process.env.ENV_CHANGED === 'true';
-            const ciChanged = process.env.CI_CHANGED === 'true';
-
-            if (ciChanged) {
-              console.log("CI workflow changed, running all modules.");
-              core.setOutput("modules_json", JSON.stringify(modulesJson));
-              core.setOutput('lint_modules_json', JSON.stringify(modulesJson));
-            } else if (process.env.check_only_changed === "true") {
-              console.log(`Filtering modules based on changes: ${JSON.stringify(changeJson)}`);
-              const filteredModules = modulesJson.filter(module => {
-                return changeJson.some(change => change.includes(module));
-              });
-              console.log(`Filtered modules: ${JSON.stringify(filteredModules)}`);
-              core.setOutput("modules_json", JSON.stringify(filteredModules));
-              // .env holds the golangci-lint version; lint all modules when it changes
-              core.setOutput('lint_modules_json', JSON.stringify(envChanged ? modulesJson : filteredModules));
-            } else {
-              console.log("check_only_changed is false, no filtering applied.");
-              core.setOutput("modules_json", JSON.stringify(modulesJson));
-              core.setOutput('lint_modules_json', JSON.stringify(modulesJson));
-            }
-      - name: Filter based on Testability
-        id: filtered_test
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          MODULES_JSON: ${{ steps.filtered.outputs.modules_json }}
-        with:
-          # Probes each module's Taskfile to see if it has "test" and/or
-          # "test/integration" targets, then splits them into two lists.
-          script: |
-            const { execSync } = require('child_process');
-            const modules = JSON.parse(process.env.MODULES_JSON || '[]');
-
-            const unitTestModules = [];
-            const integrationTestModules = [];
-
-            for (const module of modules) {
-              try {
-                const output = execSync(`task -d ${module} -aj`, { encoding: 'utf-8' });
-                const parsed = JSON.parse(output);
-                const taskNames = parsed.tasks.map(task => task.name);
-
-                if (taskNames.includes('test')) {
-                  unitTestModules.push(module);
-                }
-                if (taskNames.includes('test/integration')) {
-                  integrationTestModules.push(module);
-                }
-              } catch (error) {
-                console.log(`Skipping module '${module}' due to error or no taskfile: ${error.message}`);
-              }
-            }
-
-            console.log(`Unit test modules: ${JSON.stringify(unitTestModules)}`);
-            console.log(`Integration test modules: ${JSON.stringify(integrationTestModules)}`);
-
-            core.setOutput('unit_test_modules_json', JSON.stringify(unitTestModules));
-            core.setOutput('integration_test_modules_json', JSON.stringify(integrationTestModules));
-      - name: Generate Job Summary
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          MODULES_JSON: ${{ steps.discover.outputs.modules_json }}
-          FILTERED_JSON: ${{ steps.filtered.outputs.modules_json }}
-          LINT_MODULES_JSON: ${{ steps.filtered.outputs.lint_modules_json }}
-          ENV_CHANGED: ${{ steps.env_changes.outputs.env }}
-          CI_CHANGED: ${{ steps.ci_changes.outputs.ci }}
-          CHECK_ONLY_CHANGED: ${{ env.check_only_changed }}
-          UNIT_TESTS_JSON: ${{ steps.filtered_test.outputs.unit_test_modules_json }}
-          INTEGRATION_TESTS_JSON: ${{ steps.filtered_test.outputs.integration_test_modules_json }}
-        with:
-          script: |
-            const modules = JSON.parse(process.env.MODULES_JSON || '[]');
-            const filtered = JSON.parse(process.env.FILTERED_JSON || '[]');
-            const lintModules = JSON.parse(process.env.LINT_MODULES_JSON || '[]');
-            const envChanged = process.env.ENV_CHANGED === 'true';
-            const ciChanged = process.env.CI_CHANGED === 'true';
-            const checkOnlyChanged = process.env.CHECK_ONLY_CHANGED === 'true';
-            const unitTests = JSON.parse(process.env.UNIT_TESTS_JSON || '[]');
-            const integrationTests = JSON.parse(process.env.INTEGRATION_TESTS_JSON || '[]');
-
-            function toMarkdownList(items) {
-              return items.length ? items.map(item => `- \`${item}\``).join('\n') : '_None_';
-            }
-
-            // Must mirror the logic in "Filter JSONs Based on Changes" above.
-            const buildScope = ciChanged
-              ? 'all modules (CI workflow changed)'
-              : checkOnlyChanged
-                ? 'changed modules only'
-                : 'all modules (push)';
-
-            const lintScope = (ciChanged || envChanged)
-              ? `all modules (${ciChanged ? 'CI workflow' : '.env'} changed)`
-              : checkOnlyChanged
-                ? 'changed modules only'
-                : 'all modules (push)';
-
-            let summary = `### 🧩 Go Module Discovery Summary\n\n`;
-
-            summary += `**🔍 Discovered Modules (${modules.length}):**\n${toMarkdownList(modules)}\n\n`;
-            summary += `**🎯 Filtered Modules (${filtered.length}):**\n${toMarkdownList(filtered)}\n\n`;
-            summary += `**🔨 Build/Test Scope:** ${buildScope}\n\n`;
-            summary += `**🧹 Lint Scope:** ${lintScope}\n\n`;
-            summary += `**🧪 Unit Test Modules (${unitTests.length}):**\n${toMarkdownList(unitTests)}\n\n`;
-            summary += `**🧬 Integration Test Modules (${integrationTests.length}):**\n${toMarkdownList(integrationTests)}\n`;
-
-            core.summary.addRaw(summary).write();
-
-  golangci_lint_verify:
-    name: "golangci-lint-verify"
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      # Optional: allow write access to checks to allow the action to annotate code in the PR.
-      # Automatically downgraded to read-only for pull requests from forks
-      # https://github.blog/changelog/2021-04-20-github-actions-control-permissions-for-github_token/#setting-permissions-in-the-workflow
-      # but are kept for runs on main or on pull requests on branches in the repo (renovate).
-      checks: write
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          sparse-checkout: |
-            golangci.yml
-            .env
-          persist-credentials: false
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Read tool versions
-        id: versions
-        run: |
-          source .env
-          echo "golangci_lint=${GOLANGCI_LINT_VERSION}" >> $GITHUB_OUTPUT
-      - name: Verify the golangci-lint config
-        run:
-          task tools:golangci-lint/verify
+            const { discoverModules } = await import('${{ github.workspace }}/.github/scripts/discover-modules.js');
+            await discoverModules({ core });
 
   golangci_lint:
-    name: "golangci-lint"
-    needs:
-     - discover_modules
-     - golangci_lint_verify
+    name: "golangci-lint / ${{ matrix.module }}"
+    needs: discover_modules
+    if: ${{ needs.discover_modules.outputs.affected_lint_json != '[]' }}
     runs-on: ubuntu-24.04-arm
     permissions:
-      # Optional: allow write access to checks to allow the action to annotate code in the PR.
-      # Automatically downgraded to read-only for pull requests from forks
-      # https://github.blog/changelog/2021-04-20-github-actions-control-permissions-for-github_token/#setting-permissions-in-the-workflow
-      # but are kept for runs on main or on pull requests on branches in the repo (renovate).
       checks: write
-    # Run for all modules when .env changed, else only for changed modules
-    if: ${{ needs.discover_modules.outputs.lint_modules_json != '[]' }}
     strategy:
+      fail-fast: false
       matrix:
-        module: ${{ fromJSON(needs.discover_modules.outputs.lint_modules_json) }}
+        module: ${{ fromJSON(needs.discover_modules.outputs.affected_lint_json) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          sparse-checkout: |
-            ${{ matrix.module }}
-            golangci.yml
-            .env
           persist-credentials: false
-      - name: Setup Go ${{ matrix.go-version }}
+      - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: '${{ github.workspace }}/${{ matrix.module }}/go.mod'
-          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
+          go-version-file: .go-version
       - name: Read tool versions
         id: versions
         run: |
           source .env
           echo "golangci_lint=${GOLANGCI_LINT_VERSION}" >> $GITHUB_OUTPUT
-      - name: golangci-lint ${{ matrix.modules }}
+      - name: golangci-lint ${{ matrix.module }}
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
         with:
-          verify: 'false' # we verify in a separate command ONCE instead of every run on every module
+          verify: 'false'  # config is verified once globally, not per module
           version: ${{ steps.versions.outputs.golangci_lint }}
           working-directory: ${{ github.workspace }}/${{ matrix.module }}
           args: --timeout 10m --config=${{ github.workspace }}/golangci.yml
 
-  run_integration_tests:
-    name: "Integration Tests"
+  run_tests:
+    name: "Tests"
     needs: discover_modules
-    # Runner override map — add entries to run specific modules on a different runner.
-    # Modules not listed here use the default: ubuntu-24.04-arm.
-    # Example: '{"some/module/integration":"ubuntu-latest","other":"ubuntu-22.04"}'
-    runs-on: ${{ fromJSON('{"bindings/go/sigstore/integration":"ubuntu-latest"}')[matrix.module] || 'ubuntu-24.04-arm' }}
-    if: ${{ fromJSON(needs.discover_modules.outputs.integration_test_modules_json)[0] != null }} # skip if no modules are found
-    strategy:
-      matrix:
-        module: ${{ fromJSON(needs.discover_modules.outputs.integration_test_modules_json) }}
-    env:
-      TESTCONTAINER_DOCKER_NETWORK: integration-testcontainers
-    steps:
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          persist-credentials: false
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-        with:
-          go-version-file: '${{ github.workspace }}/${{ matrix.module }}/go.mod'
-          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
-      - name: Create Docker network for running Testcontainers
-        run: docker network create ${{ env.TESTCONTAINER_DOCKER_NETWORK }}
-      - name: Run Tests
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_USER: ${{ github.actor }}
-          MODULE: ${{ matrix.module }}
-        run: task "${MODULE}:test/integration"
-
-  run_unit_tests:
-    name: "Unit Tests"
-    needs: discover_modules
-    runs-on: ubuntu-24.04-arm
-    if: ${{ fromJSON(needs.discover_modules.outputs.unit_test_modules_json)[0] != null }} # skip if no modules are found
-    strategy:
-      matrix:
-        module: ${{ fromJSON(needs.discover_modules.outputs.unit_test_modules_json) }}
-    steps:
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          sparse-checkout: |
-            ${{ matrix.module }}
-            reuse.Taskfile.yml
-          persist-credentials: false
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
-        with:
-          go-version-file: '${{ github.workspace }}/${{ matrix.module }}/go.mod'
-          cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
-      - name: Run Tests
-        env:
-          MODULE: ${{ matrix.module }}
-        run: task "${MODULE}:test"
+    uses: ./.github/workflows/test-bindings.yaml
+    with:
+      unit_modules_json:         ${{ needs.discover_modules.outputs.affected_unit_json }}
+      integration_modules_json:  ${{ needs.discover_modules.outputs.affected_integration_json }}
+      validate_pins:             ${{ needs.discover_modules.outputs.validate_pins == 'true' }}
 
   generate:
     runs-on: ubuntu-24.04-arm
@@ -372,7 +107,7 @@ jobs:
       - name: Setup Go (required by some generators)
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: ${{ github.workspace }}/bindings/go/generator/go.mod
+          go-version-file: .go-version
           cache-dependency-path: |
             ${{ github.workspace }}/bindings/go/generator/go.sum
       - name: Run Code Generation
@@ -395,10 +130,8 @@ jobs:
     name: "Completion"
     runs-on: ubuntu-24.04-arm
     needs:
-      - discover_modules
       - generate
-      - run_unit_tests
-      - run_integration_tests
+      - run_tests
       - golangci_lint
     if: ${{ failure() }}
     steps:

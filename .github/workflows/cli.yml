@@ -18,6 +18,11 @@ on:
         description: "Version to embed in binary (overrides computed version for ldflags only). Leading 'v' is stripped."
         type: string
         required: false
+      validate_pins:
+        description: "Build with GOWORK=off to validate go.mod pins match the workspace (release builds only)."
+        type: boolean
+        required: false
+        default: false
     outputs:
       artifact_name:
         description: "The artifact name that was built."
@@ -58,21 +63,31 @@ jobs:
       id-token: write         # Needed for provenance attestations
       attestations: write     # Allows storing build attestations
     steps:
-      # Checkout only the CLI
-      - name: Checkout
+      # Full checkout for workspace mode (go.work must see all modules).
+      # Sparse checkout only when validating pins (GOWORK=off, no workspace needed).
+      - name: Checkout (full — workspace mode)
+        if: ${{ !inputs.validate_pins }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ env.CHECKOUT_REPO }}
+          persist-credentials: 'false'
+          ref: ${{ env.REF }}
+
+      - name: Checkout (sparse — pin validation mode)
+        if: ${{ inputs.validate_pins }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ env.CHECKOUT_REPO }}
           sparse-checkout: |
             .github/scripts
             ${{ env.LOCATION }}
-          persist-credentials: 'false'  # Disable automatic token persistence
+          persist-credentials: 'false'
           ref: ${{ env.REF }}
 
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: cli/go.mod
+          go-version-file: .go-version
           cache-dependency-path: cli/go.sum  # Cache dependencies by go.sum
 
       - name: Install Task
@@ -106,6 +121,8 @@ jobs:
           task cli:generate/ctf VERSION="${VERSION}" BUILD_VERSION="${BUILD_VERSION}"
           task cli:verify/ctf
         env:
+          GOWORK: ${{ inputs.validate_pins && 'off' || '' }}
+          GOPROXY: ${{ inputs.validate_pins && 'direct' || '' }}
           BUILD_VERSION_OVERRIDE: ${{ inputs.build_version }}
 
       # Attest built binaries with provenance metadata, but only if we're not on a PR

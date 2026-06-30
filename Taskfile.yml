@@ -188,6 +188,29 @@ tasks:
       - for: { var: GO_MODULES }
         cmd: 'go work use {{.ITEM}}'
 
+  verify/go.work:
+    desc: "Fail if the committed go.work is out of sync with the module tree (CI drift guard)"
+    cmds:
+      # Regenerate from scratch (same logic as init/go.work) and fail if the
+      # committed file differs. Keeps generation logic in one place.
+      - rm -f go.work
+      - task: init/go.work
+      - git diff --exit-code go.work
+
+  lint:
+    desc: "Run golangci-lint across all binding modules in the workspace"
+    cmds:
+      - go work edit -json | jq -r '.Use[].DiskPath' | xargs -I{} golangci-lint run --config={{.ROOT_DIR}}/golangci.yml --timeout=10m {}//...
+
+  bindings/test:
+    desc: "Run unit tests for all binding modules"
+    vars:
+      BINDING_MODULES:
+        sh: go work edit -json | jq -r '.Use[].DiskPath' | grep 'bindings/go' | grep -v '/integration'
+    cmds:
+      - for: { var: BINDING_MODULES }
+        cmd: 'cd {{.ROOT_DIR}}/{{.ITEM}} && task test'
+
   tidy:
     desc: "Run go mod tidy on all Go modules in the project"
     cmds:

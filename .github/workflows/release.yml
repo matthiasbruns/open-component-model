@@ -23,6 +23,11 @@ on:
         required: false
         default: true
         type: boolean
+      skip_bindings:
+        description: "Skip the binding release entirely (e.g. for a CLI/controller hotfix that does not touch bindings)."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -146,6 +151,23 @@ jobs:
             await script.determineLatestRelease({ core, github, context });
   # === release-candidate-version.yml ===
 
+  # Releases all changed binding modules in topological order, then pins the
+  # resulting binding versions into cli/go.mod and kubernetes/controller/go.mod.
+  # This must complete before tag_rc so the RC tag points at a commit that has
+  # correct go.mod files for both bindings and their consumers.
+  release_bindings:
+    name: Release Binding Modules
+    needs: [prepare]
+    if: ${{ github.event.inputs.dry_run == 'false' && github.event.inputs.skip_bindings != 'true' }}
+    uses: ./.github/workflows/release-bindings.yaml
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      dry_run: false
+      consumers_json: '["cli","kubernetes/controller"]'
+    secrets: inherit
+
   # === Copied from controller-release.yml::tag_rc ===
   # Changes vs the original:
   #   calls `createRcTags` (plural) instead of `createRcTag`
@@ -157,8 +179,9 @@ jobs:
     environment:
       name: automation
       deployment: false
-    needs: [prepare]
-    if: ${{ github.event.inputs.dry_run == 'false' }}
+    # release_bindings may be skipped (skip_bindings=true) — allow that without blocking.
+    needs: [prepare, release_bindings]
+    if: ${{ github.event.inputs.dry_run == 'false' && !failure() && !cancelled() }}
     permissions:
       contents: write
     outputs:
@@ -231,6 +254,7 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.new_tag }}
       build_version: ${{ needs.prepare.outputs.base_version }}
+      validate_pins: true
 
   # === Copied from cli-release.yml::release_rc + controller-release.yml::release_rc ===
   # Combines into one pre-release containing both CLI assets (binaries + OCI tarballs)
@@ -662,7 +686,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: cli/go.mod
+          go-version-file: .go-version
           cache: false
 
       - name: Fetch CLI go.mod at release tag
@@ -676,7 +700,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: '24'
+          node-version: '25'
 
       - name: Install dependencies
         working-directory: website
