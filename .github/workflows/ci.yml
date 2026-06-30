@@ -74,10 +74,11 @@ jobs:
         run: |
           source .env
           echo "golangci_lint=${GOLANGCI_LINT_VERSION}" >> $GITHUB_OUTPUT
-      - name: Verify golangci-lint config
-        run: task tools:golangci-lint/verify
       - name: golangci-lint
-        run: task lint
+        run: |
+          task tools:golangci-lint/verify
+          echo "$(pwd)/tmp/bin" >> "$GITHUB_PATH"
+          task lint
 
   run_tests:
     name: "Tests"
