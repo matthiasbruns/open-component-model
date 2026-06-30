@@ -59,7 +59,7 @@ jobs:
         run: task init/go.work
 
       - name: Run unit tests
-        run: go -C ${{ matrix.module }} test ./...
+        run: task ${{ matrix.module }}:test
 
   integration:
     name: "Integration / ${{ matrix.module }}"
