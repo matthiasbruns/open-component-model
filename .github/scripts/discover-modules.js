@@ -173,8 +173,11 @@ export async function discoverModules({ core, execSyncFn = _execSync }) {
     ? computeAffectedSet(changedModules, allModules, dependentsOf)
     : allModules;
 
-  // 4. Testability subsets of the affected set
-  const { unitTestModules, integrationTestModules } = splitByTestability(affectedModules, execSyncFn);
+  // 4. Testability subsets — bindings only.
+  // cli and kubernetes/controller have dedicated workflows (pipeline.yml)
+  // and must not be added to the binding test matrix.
+  const affectedBindings = affectedModules.filter(m => m.startsWith('bindings/'));
+  const { unitTestModules, integrationTestModules } = splitByTestability(affectedBindings, execSyncFn);
 
   core.setOutput('modules_json',              JSON.stringify(allModules));
   core.setOutput('affected_modules_json',     JSON.stringify(affectedModules));
