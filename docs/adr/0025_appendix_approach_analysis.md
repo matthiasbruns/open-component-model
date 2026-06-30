@@ -1,6 +1,6 @@
-THIS FILE WILL NOT LAND IN THE OCM REPO
-
 # ADR-0025 Appendix: External Approach Analysis
+
+**THIS FILE WILL NOT LAND IN THE OCM REPO**
 
 Reference for approaches evaluated in the context of [ADR-0025](0025_bindings_ci_and_release_strategy.md) and
 [PR #115](https://github.com/matthiasbruns/open-component-model/pull/115). Covers external tooling, open workflow
@@ -10,7 +10,9 @@ questions, and concrete improvement candidates.
 
 ## 1. Kubernetes Release Process (`kubernetes/release`)
 
-**Source:** https://github.com/kubernetes/release, https://github.com/kubernetes/kubernetes/tree/master/staging
+**Source:** 
+- [https://github.com/kubernetes/release](https://github.com/kubernetes/release)
+- [https://github.com/kubernetes/kubernetes/tree/master/staging](https://github.com/kubernetes/release)
 
 ### What they do
 
@@ -60,7 +62,7 @@ None. Both patterns initially identified from the K8s approach were rejected on 
 
 ## 2. OpenTelemetry `multimod` (`open-telemetry/opentelemetry-go-build-tools`)
 
-**Source:** https://github.com/open-telemetry/opentelemetry-go-build-tools
+**Source:** [https://github.com/open-telemetry/opentelemetry-go-build-tools](https://github.com/open-telemetry/opentelemetry-go-build-tools)
 
 ### What it does
 
@@ -81,6 +83,7 @@ module-sets:
 ```
 
 The release flow has two commands:
+
 - **`multimod prerelease`** — bumps versions in `versions.yaml`, rewrites `require` entries in all `go.mod` files
   via **regex** (documented as a TODO; edge cases can fail silently), and commits the changes to a new branch.
 - **`multimod tag`** — creates git tags for all modules in the named set at the version in `versions.yaml`.
@@ -91,25 +94,25 @@ only part of the toolchain that does what our `buildGraph` phase does.
 
 ### Key differences from our approach
 
-| Dimension | `multimod` | Our `release-bindings.js` |
-|---|---|---|
-| Version source | Declarative `versions.yaml` (operator edits manually) | Derived from git tags + Conventional Commits |
-| Dependency ordering | `crosslink` (separate tool, topo-sort from `go.mod`) | `buildGraph` (built-in, Kahn's algorithm) |
-| Breaking change detection | None — operator decides the bump | Automatic via `feat!:` / `BREAKING CHANGE` |
-| `go.mod` rewriting | Regex replacement (fragile) | `go mod edit -require` (toolchain-authoritative) |
-| First-time modules | Operator puts version in `versions.yaml`; tagged normally | Falls through to pseudo-version (gap — see §3a) |
-| Pseudo-version / commit pins | Not supported — uses `replace` sentinel only | `go get @commit` for untagged deps |
-| Human gate | None built in | GitHub environment approval before any tags push |
-| Idempotency | `multimod tag` fails on already-existing tags (bug [#205](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/205)) | Explicit idempotency check in `publish` (skips if tag at HEAD, fails loudly if at different commit) |
+| Dimension                    | `multimod`                                                                                                                            | Our `release-bindings.js`                                                                           |
+|------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| Version source               | Declarative `versions.yaml` (operator edits manually)                                                                                 | Derived from git tags + Conventional Commits                                                        |
+| Dependency ordering          | `crosslink` (separate tool, topo-sort from `go.mod`)                                                                                  | `buildGraph` (built-in, Kahn's algorithm)                                                           |
+| Breaking change detection    | None — operator decides the bump                                                                                                      | Automatic via `feat!:` / `BREAKING CHANGE`                                                          |
+| `go.mod` rewriting           | Regex replacement (fragile)                                                                                                           | `go mod edit -require` (toolchain-authoritative)                                                    |
+| First-time modules           | Operator puts version in `versions.yaml`; tagged normally                                                                             | Falls through to pseudo-version (gap — see §3a)                                                     |
+| Pseudo-version / commit pins | Not supported — uses `replace` sentinel only                                                                                          | `go get @commit` for untagged deps                                                                  |
+| Human gate                   | None built in                                                                                                                         | GitHub environment approval before any tags push                                                    |
+| Idempotency                  | `multimod tag` fails on already-existing tags (bug [#205](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/205)) | Explicit idempotency check in `publish` (skips if tag at HEAD, fails loudly if at different commit) |
 
 ### Open bugs (as of 2026-06)
 
-| Issue | Status | Impact |
-|---|---|---|
-| [#905](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/905) | Open | `prerelease` writes `require` entries for excluded modules at non-existent proxy versions — silent breakage for external consumers |
-| [#205](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/205) | Open (stalled fix PR) | `multimod tag` is not idempotent — re-running after partial failure errors on existing tags |
-| [#47](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/47) | Open | `commitChangesToNewBranch` crashes if the branch was checked out via `gh pr checkout` (go-git rejects merge refs) |
-| [#1169](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/1169) | Fixed Sep 2025 | `v2+` subdir modules got double-suffixed tags (`foo/v2/v2.0.0` instead of `foo/v2.0.0`) |
+| Issue                                                                               | Status                | Impact                                                                                                                             |
+|-------------------------------------------------------------------------------------|-----------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| [#905](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/905)   | Open                  | `prerelease` writes `require` entries for excluded modules at non-existent proxy versions — silent breakage for external consumers |
+| [#205](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/205)   | Open (stalled fix PR) | `multimod tag` is not idempotent — re-running after partial failure errors on existing tags                                        |
+| [#47](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/47)     | Open                  | `commitChangesToNewBranch` crashes if the branch was checked out via `gh pr checkout` (go-git rejects merge refs)                  |
+| [#1169](https://github.com/open-telemetry/opentelemetry-go-build-tools/issues/1169) | Fixed Sep 2025        | `v2+` subdir modules got double-suffixed tags (`foo/v2/v2.0.0` instead of `foo/v2.0.0`)                                            |
 
 ### Verdict: do not adopt
 
@@ -135,6 +138,7 @@ to use alongside them.
 **Short answer: yes for CI, with caveats at release time.**
 
 **CI (what works):**
+
 - `task init/go.work` uses `find` over `go.mod` files, so the new module is picked up automatically in go.work.
 - `discoverModules` uses `task go_modules` (same find-based mechanism) — new binding appears in the matrix.
 - Workspace-level dependency resolution works: any binding that imports the new one resolves via go.work.
@@ -152,6 +156,7 @@ path. `pinDeps` runs `GOPROXY=direct go get <module>@<headCommit>`, which produc
 consumers and never automatically graduates to a real semver tag — the pipeline has no bootstrap step.
 
 **Fix options:**
+
 - Add a bootstrap path in `planRelease`: if a module has no previous tag and has code (not just a scaffold),
   assign it `v0.0.1` as the initial tag instead of leaving it pseudo-versioned.
 - Or document that a developer must manually tag a new binding once (`bindings/go/newbinding/v0.0.1`) before
@@ -162,6 +167,7 @@ consumers and never automatically graduates to a real semver tag — the pipelin
 **Short answer: hard external break, internal CI catches missed updates loudly.**
 
 **Internal (CI):**
+
 - Any `go.mod` file that still references the old module path will fail the workspace build immediately — loud,
   hard error. Good.
 - The new binding directory is picked up by go.work and module discovery automatically.
@@ -169,6 +175,7 @@ consumers and never automatically graduates to a real semver tag — the pipelin
   a manual entry or `task <module>:test` won't work locally (CI still works via `task -d`).
 
 **External consumers:**
+
 - The old module path no longer exists. Any external `go.mod` with `require ocm.software/.../oldname` breaks
   immediately — the Go module system has no redirect mechanism for path renames.
 - Old tags (`bindings/go/oldname/v0.1.0`) survive in git as dead weight; they are permanently orphaned.
@@ -184,6 +191,7 @@ the first release.
 **Decision taken in PR #115:** `go.work` is gitignored and generated in CI via `task init/go.work`.
 
 **Rationale:**
+
 - A committed `go.work` references all 35 modules; sparse-checkout jobs only have a subset, so Go tooling
   would fail on missing paths without a post-checkout override.
 - The previous workaround was `rm go.work && task init/go.work` — the `rm` exists only because
@@ -299,19 +307,19 @@ retry or per-module `continue-on-error`. **Mitigation:** consider per-job `timeo
 
 ## 4. Summary Table
 
-| Question / Approach | Verdict | Action |
-|---|---|---|
-| Kubernetes publishing-bot / separate repos | Not applicable | None |
-| K8s `replace` directives | ~~Worth adopting~~ **Retracted** — breaks proxy publish; redundant with `go.work` | None |
-| K8s `go mod edit -fmt` | ~~Worth adopting~~ **Retracted** — redundant; `go mod tidy` already canonicalizes | None |
-| OpenTelemetry `multimod` | Do not adopt — regex go.mod rewriting, non-idempotent tag, manual versions.yaml | `crosslink` confirms our topo-sort approach; no adoption needed |
-| Add new binding in same PR | Works with caveats | Bootstrap gap: document manual first-tag; warn on missing Taskfile test task |
-| Rename binding | Hard external break | Document in CONTRIBUTING; no tooling change |
-| Commit go.work | Decided: gitignore it | Done in PR #115; add `rm -f go.work` prefix for self-hosted runner safety |
-| `detectBump` wrong-bump risk | Known limitation | Document gate reviewer responsibility; consider version bump override input |
-| `GOPROXY=direct` race window | Known bug | Add retry loop around `go get @commit` calls in `pinDeps` |
-| `pinDeps` not idempotent | Known gap | Add pre-check to skip already-pinned modules on re-run |
-| Flaky integration test blast radius | Known risk | Per-job `timeout-minutes`; consider non-blocking integration status |
-| Docs-only PR runs full matrix | Known waste | Add `paths-ignore` on `pull_request` trigger in `ci.yml` |
-| Stale go.work on self-hosted runners | Latent correctness bug | `rm -f go.work go.work.sum` before `task init/go.work` in all CI jobs |
-| Developer onboarding (no root README link) | Friction trap | Add `task init/go.work` mention to root `README.md` |
+| Question / Approach                        | Verdict                                                                           | Action                                                                       |
+|--------------------------------------------|-----------------------------------------------------------------------------------|------------------------------------------------------------------------------|
+| Kubernetes publishing-bot / separate repos | Not applicable                                                                    | None                                                                         |
+| K8s `replace` directives                   | ~~Worth adopting~~ **Retracted** — breaks proxy publish; redundant with `go.work` | None                                                                         |
+| K8s `go mod edit -fmt`                     | ~~Worth adopting~~ **Retracted** — redundant; `go mod tidy` already canonicalizes | None                                                                         |
+| OpenTelemetry `multimod`                   | Do not adopt — regex go.mod rewriting, non-idempotent tag, manual versions.yaml   | `crosslink` confirms our topo-sort approach; no adoption needed              |
+| Add new binding in same PR                 | Works with caveats                                                                | Bootstrap gap: document manual first-tag; warn on missing Taskfile test task |
+| Rename binding                             | Hard external break                                                               | Document in CONTRIBUTING; no tooling change                                  |
+| Commit go.work                             | Decided: gitignore it                                                             | Done in PR #115; add `rm -f go.work` prefix for self-hosted runner safety    |
+| `detectBump` wrong-bump risk               | Known limitation                                                                  | Document gate reviewer responsibility; consider version bump override input  |
+| `GOPROXY=direct` race window               | Known bug                                                                         | Add retry loop around `go get @commit` calls in `pinDeps`                    |
+| `pinDeps` not idempotent                   | Known gap                                                                         | Add pre-check to skip already-pinned modules on re-run                       |
+| Flaky integration test blast radius        | Known risk                                                                        | Per-job `timeout-minutes`; consider non-blocking integration status          |
+| Docs-only PR runs full matrix              | Known waste                                                                       | Add `paths-ignore` on `pull_request` trigger in `ci.yml`                     |
+| Stale go.work on self-hosted runners       | Latent correctness bug                                                            | `rm -f go.work go.work.sum` before `task init/go.work` in all CI jobs        |
+| Developer onboarding (no root README link) | Friction trap                                                                     | Add `task init/go.work` mention to root `README.md`                          |

@@ -199,7 +199,8 @@ directory needs to be present.
 | `test-bindings` integration        | full                      | committed `go.work`               |
 | `cli` / controller build           | full                      | committed `go.work`               |
 | `cli` / controller build (release) | sparse (module + scripts) | `GOWORK=off` (validate pins)      |
-| `e2e`, `conformance`               | module + config           | none                              |
+| `e2e`, `conformance`               | full                      | committed `go.work`               |
+| `e2e`, `conformance` (release)     | sparse (scenario only)    | `GOWORK=off` (validate pins)      |
 
 ---
 
@@ -219,7 +220,7 @@ this window.
 A binding is scheduled for release when there is at least one commit that touched its directory since its
 last semver tag:
 
-```
+```bash
 git log <lastTag>..HEAD -- bindings/go/<module>
 ```
 
