@@ -43,6 +43,11 @@ on:
         type: string
         required: false
         default: ""
+      validate_pins:
+        description: "Run with GOWORK=off + sparse checkout to validate go.mod pins (release builds). PR builds use the workspace."
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -57,6 +62,9 @@ env:
   REGISTRY: ghcr.io
   # CLI_IMAGE_NAME and CONTROLLER_IMAGE_NAME are computed because
   # GHCR does not like uppercased owner names.
+  # PR builds resolve against the committed workspace (full checkout); release
+  # builds disable it to validate that go.mod pins resolve standalone.
+  GOWORK: ${{ inputs.validate_pins && 'off' || '' }}
 
 jobs:
   conformance:
@@ -79,7 +87,16 @@ jobs:
             echo "CONTROLLER_IMAGE_NAME=${REGISTRY}/$OWNER/kubernetes/controller"
           } >> "$GITHUB_ENV"
 
-      - name: Checkout
+      # Full checkout for workspace mode (committed go.work must see all modules).
+      # Sparse checkout only when validating pins (GOWORK=off, no workspace needed).
+      - name: Checkout (full — workspace mode)
+        if: ${{ !inputs.validate_pins }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Checkout (sparse — pin validation mode)
+        if: ${{ inputs.validate_pins }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           sparse-checkout: conformance/scenarios/sovereign

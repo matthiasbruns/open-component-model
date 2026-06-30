@@ -113,6 +113,7 @@ jobs:
       toolkit_image_artifact: ${{ needs.build_controller.outputs.artifact_name }}
       toolkit_chart_artifact: ${{ needs.build_controller.outputs.chart_pr_artifact }}
       toolkit_version: ${{ needs.build_controller.outputs.version }}
+      validate_pins: ${{ inputs.validate_pins || false }}
   # === end replace ===
 
   # === New: E2E lifted out of kubernetes-controller.yml so it runs concurrently
@@ -129,6 +130,7 @@ jobs:
       ref: ${{ inputs.ref }}
       controller_image_artifact: ${{ needs.build_controller.outputs.artifact_name }}
       controller_version: ${{ needs.build_controller.outputs.version }}
+      validate_pins: ${{ inputs.validate_pins || false }}
   # === end ===
 
   # === New this part is a copy from cli.yml::build::branch-check + kubernetes-controller.yml::build::branch-check ===
