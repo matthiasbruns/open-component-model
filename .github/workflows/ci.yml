@@ -50,35 +50,35 @@ jobs:
             await discoverModules({ core });
 
   golangci_lint:
-    name: "golangci-lint"
+    name: "golangci-lint / ${{ matrix.module }}"
+    needs: discover_modules
     runs-on: ubuntu-24.04-arm
     permissions:
       checks: write
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.discover_modules.outputs.modules_json) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: .go-version
-      - name: Init workspace
-        run: task init/go.work
       - name: Read tool versions
         id: versions
         run: |
           source .env
           echo "golangci_lint=${GOLANGCI_LINT_VERSION}" >> $GITHUB_OUTPUT
-      - name: golangci-lint
-        run: |
-          task tools:golangci-lint/verify
-          echo "$(pwd)/tmp/bin" >> "$GITHUB_PATH"
-          task lint
+      - name: golangci-lint ${{ matrix.module }}
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
+        with:
+          verify: 'false'  # config is verified once globally, not per module
+          version: ${{ steps.versions.outputs.golangci_lint }}
+          working-directory: ${{ github.workspace }}/${{ matrix.module }}
+          args: --timeout 10m --config=${{ github.workspace }}/golangci.yml
 
   run_tests:
     name: "Tests"
