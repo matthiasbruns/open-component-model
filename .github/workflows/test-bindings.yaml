@@ -100,6 +100,7 @@ jobs:
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
       - name: Init workspace
+        if: ${{ !inputs.validate_pins }}
         run: task init/go.work
 
       - name: Create Docker network for Testcontainers
@@ -110,4 +111,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_USER: ${{ github.actor }}
           MODULE: ${{ matrix.module }}
+          GOWORK: ${{ inputs.validate_pins && 'off' || '' }}
         run: task "${MODULE}:test/integration"
