@@ -10,7 +10,8 @@ questions, and concrete improvement candidates.
 
 ## 1. Kubernetes Release Process (`kubernetes/release`)
 
-**Source:** 
+**Source:**
+
 - [https://github.com/kubernetes/release](https://github.com/kubernetes/release)
 - [https://github.com/kubernetes/kubernetes/tree/master/staging](https://github.com/kubernetes/release)
 
@@ -62,7 +63,8 @@ None. Both patterns initially identified from the K8s approach were rejected on 
 
 ## 2. OpenTelemetry `multimod` (`open-telemetry/opentelemetry-go-build-tools`)
 
-**Source:** [https://github.com/open-telemetry/opentelemetry-go-build-tools](https://github.com/open-telemetry/opentelemetry-go-build-tools)
+**Source:
+** [https://github.com/open-telemetry/opentelemetry-go-build-tools](https://github.com/open-telemetry/opentelemetry-go-build-tools)
 
 ### What it does
 
