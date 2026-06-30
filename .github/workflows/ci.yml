@@ -41,6 +41,8 @@ jobs:
         with:
           go-version-file: .go-version
           cache: false
+      - name: Verify go.work is in sync with the module tree
+        run: task verify/go.work
       - name: Discover modules and compute affected set
         id: discover
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
