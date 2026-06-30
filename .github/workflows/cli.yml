@@ -63,16 +63,25 @@ jobs:
       id-token: write         # Needed for provenance attestations
       attestations: write     # Allows storing build attestations
     steps:
-      # Checkout only the CLI
-      - name: Checkout
+      # Full checkout for workspace mode (go.work must see all modules).
+      # Sparse checkout only when validating pins (GOWORK=off, no workspace needed).
+      - name: Checkout (full — workspace mode)
+        if: ${{ !inputs.validate_pins }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ env.CHECKOUT_REPO }}
+          persist-credentials: 'false'
+          ref: ${{ env.REF }}
+
+      - name: Checkout (sparse — pin validation mode)
+        if: ${{ inputs.validate_pins }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ env.CHECKOUT_REPO }}
           sparse-checkout: |
             .github/scripts
             ${{ env.LOCATION }}
-            bindings/
-          persist-credentials: 'false'  # Disable automatic token persistence
+          persist-credentials: 'false'
           ref: ${{ env.REF }}
 
       - name: Install Task
@@ -89,9 +98,7 @@ jobs:
 
       - name: Init workspace
         if: ${{ !inputs.validate_pins }}
-        run: |
-          rm -f go.work go.work.sum
-          task init/go.work
+        run: task init/go.work
 
       # Setup Docker Buildx for multi-arch and advanced image building
       - name: Setup docker/buildx
