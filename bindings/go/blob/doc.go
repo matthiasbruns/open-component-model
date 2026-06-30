@@ -16,6 +16,4 @@
 //     DigestAware for open-container type digests.
 //
 // Note that filesystem-backed blobs, direct and buffer-backed blobs are located in a separated sub-package.
-//
-// The transformer sub-package provides composable blob transformations such as compression and decompression.
 package blob
