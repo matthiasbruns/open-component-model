@@ -77,13 +77,7 @@ jobs:
       - name: Verify golangci-lint config
         run: task tools:golangci-lint/verify
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
-        with:
-          version: ${{ steps.versions.outputs.golangci_lint }}
-          args: --timeout 10m --config=${{ github.workspace }}/golangci.yml
-          working-directory: ${{ github.workspace }}
-        env:
-          GOWORK: ${{ github.workspace }}/go.work
+        run: task lint
 
   run_tests:
     name: "Tests"
