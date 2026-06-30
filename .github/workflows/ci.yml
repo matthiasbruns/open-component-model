@@ -41,8 +41,6 @@ jobs:
         with:
           go-version-file: .go-version
           cache: false
-      - name: Init workspace
-        run: task init/go.work
       - name: Discover modules and compute affected set
         id: discover
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9

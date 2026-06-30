@@ -60,10 +60,6 @@ jobs:
           go-version-file: .go-version
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
 
-      - name: Init workspace
-        if: ${{ !inputs.validate_pins }}
-        run: task init/go.work
-
       - name: Run unit tests
         env:
           GOWORK: ${{ inputs.validate_pins && 'off' || '' }}
@@ -98,10 +94,6 @@ jobs:
         with:
           go-version-file: .go-version
           cache-dependency-path: '${{ github.workspace }}/${{ matrix.module }}/go.sum'
-
-      - name: Init workspace
-        if: ${{ !inputs.validate_pins }}
-        run: task init/go.work
 
       - name: Create Docker network for Testcontainers
         run: docker network create ${{ env.TESTCONTAINER_DOCKER_NETWORK }}

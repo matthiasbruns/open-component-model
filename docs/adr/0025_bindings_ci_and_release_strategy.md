@@ -178,9 +178,10 @@ enumerate all binding modules without any hardcoded list. When a module is added
 workspace-mode CI fails loudly — `go.work` is the source of truth, not a generated file.
 
 The authoritative Go version is stored in `.go-version` (repo root). The `task init/go.work` task
-(`go work init` + `go work use` for all `go.mod` files) is retained for bootstrapping a workspace from scratch,
-but because `go.work` is committed and uses `status: find go.work`, it is a no-op after a normal checkout — the
-committed file is used directly.
+(`go work init` + `go work use` for all `go.mod` files) is retained only as a local bootstrap helper for
+regenerating the workspace from scratch. CI no longer invokes it: because `go.work` is committed it is already
+present after checkout (and `status: find go.work` would make the task a no-op anyway), so the committed file is
+used directly.
 
 ### Checkout strategy
 

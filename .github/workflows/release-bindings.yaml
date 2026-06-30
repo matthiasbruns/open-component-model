@@ -98,9 +98,6 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Init go.work
-        run: task init/go.work
-
       - name: Build dependency graph
         id: graph
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -299,9 +296,6 @@ jobs:
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Init go.work
-        run: task init/go.work
 
       - name: Release groups
         id: publish
