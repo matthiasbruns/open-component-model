@@ -3,427 +3,254 @@
 * **Status**: proposed
 * **Deciders**: OCM Technical Steering Committee
 * **Date**: 2026-06-22
-* **Last updated**: 2026-06-30 — `go.work` is now committed and authoritative (was git-ignored/generated).
-  See *go.work Management* and *go.sum correctness requirement*.
+* **Last updated**: 2026-06-30 — `go.work` is committed and authoritative (was git-ignored/generated).
 
 ---
 
-## Technical Story
+## Context
 
-The OCM monorepo maintains 20+ Go binding modules (`bindings/go/*`), small independently versioned Go modules that
-wrap OCM capabilities for specific consumers (CEL, Helm, OCI, sigstore, …). These modules are interdependent (many
-import `bindings/go/credentials` or `bindings/go/oci`) and also consumed by top-level modules (`cli`,
-`kubernetes/controller`).
+The OCM monorepo maintains 20+ independently versioned Go binding modules under `bindings/go/*` (CEL, Helm, OCI,
+sigstore, …). They depend on each other (many import `bindings/go/credentials` or `bindings/go/oci`) and are consumed
+by the top-level `cli` and `kubernetes/controller` modules.
 
-The independent-module setup was creating significant friction across the team:
+Treating each binding as its own module is correct for external consumers — they can pin a single binding at a specific
+version — but the tooling around that boundary created friction we needed to remove. Four problems had to be solved:
 
-* PR overhead: a single logical change (e.g., adding a new credential type that spans multiple bindings) required
-  a strict sequential chain: merge a PR for the base binding, release it, then open the next PR for the dependent
-  binding combining the `go.mod` pin update with the functional changes, merge it, release it, and repeat for every
-  binding in the dependency chain. Reviewers saw each PR in isolation without the context of the broader change, making
-  review harder and slower.
-* **CI complexity**: the initial CI design used change-based filtering to avoid running all binding tests on every PR.
-  This required `dorny/paths-filter`, separate signals for `.env` and CI workflow changes, and special-cased expansion
-  rules to catch cross-module regressions.
+1. **Cross-module PRs.** A change spanning several bindings used to require a sequential chain: merge and release the
+   base binding, then open a PR pinning it in the next binding, and so on. Reviewers saw each step out of context.
+2. **Cross-module regressions.** A change to `bindings/go/credentials` can break `bindings/go/helm` or `cli`; testing
+   only the changed module misses this.
+3. **Workspace consistency.** The repo-wide `go.work` must reflect the checked-out tree so workspace-aware commands
+   resolve every dependency locally.
+4. **Coordinated releases.** Bindings must be released in dependency order; releasing them ad-hoc leaves dependents
+   pinned to stale versions.
 
-The friction was in the tooling around the module boundary model, not in the model itself. This ADR documents the
-multiple
-candidate directions evaluated and explains how the chosen approach resolves each pain point.
-
-### Context and Problem Statement
-
-Four concrete problems had to be solved:
-
-1. **Cross-module pull-requests**: changes relating to multiple bindings can now be provided in one PR instead of having
-   a PR per binding change with binding releases in-between.
-2. **Cross-module regressions**: a change to `bindings/go/credentials` can silently break `bindings/go/helm` or `cli` if
-   only the changed module is tested.
-3. **Workspace management**: the repo-wide `go.work` at the root is always present during development or is generated
-   within the CI workflows.
-   It must reflect the checked-out tree so that workspace-aware commands resolve all dependencies locally during
-   development and CI.
-4. **Coordinated releases**: bindings must be released in dependency order. A manual per-module release can leave
-   dependent modules in an inconsistent state.
-
-### Out of scope
-
-* Per-component release versioning (covered by [ADR 0010](0010_release_strategy.md)).
+**Out of scope:** per-component release versioning (see [ADR 0010](0010_release_strategy.md)).
 
 ---
 
-## Decision Drivers
+## Decisions
 
-* CI must catch cross-module regressions, not just single-module failures.
-* Developer UX must allow cross-binding pull-requests without the need to release a binding in-between.
-* `cli` and `kubernetes/controller` have dedicated build/release workflows and must not be polluted by binding CI.
-* Binding releases must respect dependency order and leave consumers (`cli`, `kubernetes/controller`) in a consistent
-  pinned state.
+| Area | Chosen | Rejected | Why |
+|---|---|---|---|
+| **Module structure** | Keep per-binding `go.mod`; add a **committed `go.work`** as the source of truth for local + CI resolution | Fold all bindings into one shared library | Keeps independent versioning so external consumers take only what they need. The friction was in the tooling, not the boundary model; `go.work` removes the multi-PR chain without losing the boundary. |
+| **CI test selection** | **Graph-aware filtering**: test changed modules + all direct/indirect dependents | Always test every binding | The dependency graph from `go.mod` gives an exact affected set, so cross-module regressions are still caught without paying the full test cost on every PR. |
+| **Release** | **Automated phased bulk release** (`release-bindings.yaml`): plan → test → gate → release in dependency order | Manual per-module release as the primary path | Guarantees dependency ordering, gates on human review before any tag is pushed, and pins consumers atomically. Manual release is kept as an escape hatch for isolated fixes and bootstrapping. |
 
----
-
-## Options
-
-### Structural direction
-
-* **Keep Go modules, improve tooling**: retain independent `go.mod` per binding and use a committed `go.work`
-  as the source of truth for cross-module resolution in local development and CI. This reduces PR friction
-  without changing the module boundary model.
-* **Ditch Go modules, shared library**: remove per-binding `go.mod` files and fold all bindings into a single shared
-  library consumed directly by `cli` and `kubernetes/controller`. Eliminates the boundary model entirely.
-
-### CI strategy
-
-* **Graph-aware change-based filtering**: on PR, build the full dependency graph from `go.mod` files, detect
-  which modules changed, and test the changed modules plus every direct and indirect dependent.
-* **Always test all bindings**: test every binding on every PR regardless of what changed.
-
-### Release strategy
-
-* **Manual per-module release** via `release-go-submodule.yaml`.
-* **Automated phased bulk release** via `release-bindings.yaml` (plan, test, gate, release).
+**Consequence:** every PR runs the affected binding tests against the local workspace, trading some CI compute for
+correctness and a single-PR developer flow. The phased release provides the ordering and consistency guarantees the
+manual path cannot.
 
 ---
 
-## Decision Outcome
+## PR vs release builds
 
-Keep Go modules with a committed `go.work` as the source of truth, use graph-aware change-based filtering in CI,
-and use the automated phased bulk release as the canonical path. The manual per-module release is retained for
-isolated fixes and for bootstrapping new bindings. All workspace-mode CI jobs use a full checkout with `go.work`
-enabled; only pin-validation jobs (`GOWORK=off`) may use a sparse checkout.
+The same workflows run in two modes, switched by a single `validate_pins` input. PR/CI builds resolve against the
+committed workspace; release builds disable it to prove the published `go.mod`/`go.sum` pins are correct on their own.
 
-**Why keep Go modules over a shared library:** Ditching Go modules would eliminate independent versioning, making it
-impossible for external consumers to take only the bindings they need at a specific version. The binding boundary model
-has value; the friction was in the tooling around it, not in the model itself. Adding `go.work` recovers the
-developer-experience benefit without sacrificing the boundary model.
+| | PR / CI build | Release build |
+|---|---|---|
+| Triggered by | `pull_request`, push to `main` | `release.yml` (tagged) → `pipeline.yml` |
+| `validate_pins` | `false` | `true` |
+| Workspace | committed `go.work` — **enabled** | **`GOWORK=off`** |
+| Checkout | full — every module on disk | sparse — only the built module/scenario |
+| Deps resolve from | local module tree via the workspace | `go.mod`/`go.sum` pins + module proxy |
+| `go.mod` pins | may be stale; shadowed by the workspace | authoritative; this build validates them |
+| Proves | in-flight cross-binding changes compile and test together, no tags needed | a `go get` consumer gets a correct, complete build |
 
-**Why graph-aware filtering over always-test-all:** Testing every binding on every PR wastes compute on changes
-that cannot affect unrelated modules. The dependency graph derived from `go.mod` files gives an exact affected set —
-the changed modules plus all direct and indirect dependents. This keeps feedback fast without sacrificing regression
-coverage, because a module is only skipped when the graph proves it cannot be affected.
+```mermaid
+flowchart TD
+    A[build / test job] --> B{validate_pins?}
+    B -- "false · PR / CI" --> C[full checkout]
+    C --> D[go.work enabled]
+    D --> E[resolve from local tree]
+    B -- "true · release" --> F[sparse checkout]
+    F --> G[GOWORK=off]
+    G --> H["resolve from go.mod pins + proxy"]
+```
 
-**Why the phased bulk release over manual per-module releases:** A phased bulk release computes next tags in
-dependency order, runs tests, requires human review of the plan before any tags are pushed, and pins consumer
-`go.mod` files (`cli`, `kubernetes/controller`) atomically. Manual per-module releases cannot guarantee dependency
-ordering and create a consistency window (see *Release Strategy* below). The manual workflow is kept as an escape
-hatch for isolated fixes and for bootstrapping new bindings.
-
----
-
-## Pros and Cons
-
-### Structural direction
-
-**Keep Go modules with go.work (selected)**
-
-* **Pros:** Preserves independent versioning so external consumers can depend on specific binding versions.
-  `go.work` eliminates multi-PR sequential chains during development.
-* **Cons:** Still requires a release workflow that understands dependency order. The committed `go.work` must be
-  updated (`go work use`) when modules are added or removed; CI fails loudly if it drifts from the module tree.
-  Because `go.work` shadows `go.mod` version pins, pin drift is invisible on normal PRs and is only caught at
-  release (`GOWORK=off`) and on Renovate pin PRs (see *go.sum correctness requirement*).
-
-**Ditch Go modules, shared library (not selected)**
-
-* **Pros:** Zero release friction, no dependency ordering, and a single `go.mod` for the whole codebase.
-* **Cons:** Loses independent versioning entirely. External consumers must take the entire library at a single version.
-  Breaking changes affect all consumers simultaneously with no opt-in period. Contradicts the binding design goal of
-  composability.
-
-### CI strategy
-
-**Graph-aware change-based filtering (selected)**
-
-* **Pros:** Only the affected modules run on any given PR. The dependency graph derived from `go.mod` gives an
-  exact affected set — changed modules plus all direct and indirect dependents — so cross-module regressions
-  are still caught. New bindings are automatically included when they appear in the graph. `cli` and
-  `kubernetes/controller` are included when any of their binding imports are in the affected set, or when
-  their own code changes.
-* **Cons:** Requires building the dependency graph on every PR. Modules with no graph path to the changed code
-  are skipped, so a regression that manifests only at runtime without a compile-time dependency would be missed.
-
-**Always test all bindings (not selected)**
-
-* **Pros:** Guaranteed to catch any regression regardless of dependency structure.
-* **Cons:** Every code-touching PR pays the full test cost even for unrelated changes, which grows linearly with
-  the number of bindings.
-
-### Release strategy
-
-**Phased bulk release (selected as canonical path)**
-
-* **Pros:** Dependency order is guaranteed, a human review gate runs before any tags are pushed, and consumers
-  are pinned atomically.
-* **Cons:** More complex workflow that requires a plan step to probe the dependency graph.
-
-**Manual per-module release (kept for isolated fixes and bootstrapping)**
-
-* **Pros:** Simple workflow where the developer controls exactly which version is released and when.
-* **Cons:** No dependency ordering, which creates a consistency window between dependent modules (see below).
+**One PR-time exception.** Renovate's `ocm-monorepo` group PRs bump internal binding pins, so they run
+`validate_pins=true` (`GOWORK=off`) even though they are PRs — otherwise the workspace would shadow the very pins the
+PR is changing. They keep a full checkout; only the workspace is disabled. See *Renovate pin-validation* below.
 
 ---
 
-## go.work Management
+## The go.work model
 
 ### Why go.work is committed
 
-`go.work` and `go.work.sum` are committed to the repository and are the source of truth for cross-module
-resolution in local development and CI. On `main` and feature branches the binding `go.mod` files do not
-necessarily pin each other at consistent versions — the workspace redirects every internal import to the local
-tree, so the committed `go.work` is what makes the monorepo build coherently. `go.mod` pins only become
-authoritative at release time (see *go.sum correctness requirement*).
+`go.work` and `go.work.sum` are committed and are the source of truth for cross-module resolution in local development
+and CI. On `main` and feature branches the binding `go.mod` files do not necessarily pin each other at consistent
+versions — the workspace redirects every internal import to the local tree, so the committed `go.work` is what makes
+the monorepo build coherently. `go.mod` pins only become authoritative at release time.
 
-`discoverModules()` in the workflow script reads the workspace via `go work edit -json` to
-enumerate all binding modules without any hardcoded list. When a module is added or removed, the committed
-`go.work` must be updated (`go work use ./<module>`) in the same change; if it drifts from the module tree,
-workspace-mode CI fails loudly — `go.work` is the source of truth, not a generated file.
-
-The authoritative Go version is stored in `.go-version` (repo root). The `task init/go.work` task
-(`go work init` + `go work use` for all `go.mod` files) is retained only as a local bootstrap helper for
-regenerating the workspace from scratch. CI no longer invokes it: because `go.work` is committed it is already
-present after checkout (and `status: find go.work` would make the task a no-op anyway), so the committed file is
-used directly.
+When a module is added or removed, the committed `go.work` must be updated (`go work use ./<module>`) in the same
+change. If it drifts from the module tree, workspace-mode CI fails loudly — `go.work` is the source of truth, not a
+generated file. The `task init/go.work` task is kept only as a local bootstrap helper (regenerate from scratch); CI
+never needs it because the committed file is already present after checkout.
 
 ### Checkout strategy
 
-Workspace-mode jobs (lint, binding tests, and consumer builds that resolve against the local tree) use a **full**
-repository checkout, because the committed `go.work` references every module directory and Go tooling fails on
-missing paths. Sparse-checkout is only used by **pin-validation** jobs that run with `GOWORK=off`: with the
-workspace disabled, the build resolves from `go.mod`/`go.sum` and the module proxy, so only the target module's
-directory needs to be present.
+Workspace-mode jobs use a **full** checkout because the committed `go.work` references every module directory and Go
+fails on missing paths. Sparse checkout is used only by **pin-validation** jobs (`GOWORK=off`), which resolve from
+`go.mod`/`go.sum` + proxy and so need only the target module present.
 
-| Job                                | Checkout                  | Workspace                         |
-|------------------------------------|---------------------------|-----------------------------------|
-| `golangci_lint`                    | full                      | committed `go.work`               |
-| `test-bindings` unit               | full                      | committed `go.work`               |
-| `test-bindings` unit (pin-validate)| full                      | `GOWORK=off` (Renovate PRs)       |
-| `test-bindings` integration        | full                      | committed `go.work`               |
-| `cli` / controller build           | full                      | committed `go.work`               |
-| `cli` / controller build (release) | sparse (module + scripts) | `GOWORK=off` (validate pins)      |
-| `e2e`, `conformance`               | full                      | committed `go.work`               |
-| `e2e`, `conformance` (release)     | sparse (scenario only)    | `GOWORK=off` (validate pins)      |
+| Job | Checkout | Workspace |
+|---|---|---|
+| `golangci_lint` | full | committed `go.work` |
+| `test-bindings` unit | full | committed `go.work` |
+| `test-bindings` unit (pin-validate) | full | `GOWORK=off` (Renovate PRs) |
+| `test-bindings` integration | full | committed `go.work` |
+| `cli` / controller build | full | committed `go.work` |
+| `cli` / controller build (release) | sparse (module + scripts) | `GOWORK=off` (validate pins) |
+| `e2e`, `conformance` | full | committed `go.work` |
+| `e2e`, `conformance` (release) | sparse (scenario only) | `GOWORK=off` (validate pins) |
+
+### go.sum correctness and the one known gap
+
+Because the workspace is authoritative, `go.mod`/`go.sum` pins are **not** required to be standalone-consistent on
+every commit — `go.work` shadows them. Standalone correctness (a pure `go get` resolution) is enforced at exactly two
+points:
+
+* **Release tags** — the release build runs `GOWORK=off`, so a binding tag can only be cut from a commit whose
+  `go.mod`/`go.sum` are complete.
+* **Renovate `ocm-monorepo` PRs** — run `GOWORK=off` so a bad pin fails before merge.
+
+> **Known gap — `go.mod` consistency on `main`.** Between those two points, `go.work` masks stale pins: a drift
+> introduced on an ordinary feature PR is invisible until the next release or Renovate PR. There is no general
+> `GOWORK=off` check on `main` today. If it becomes a problem, add a periodic or push-to-`main` job that runs
+> `go mod tidy` with `GOWORK=off` across all modules and fails on a diff. (Open question from the 29.06.2026 design
+> discussion.)
 
 ---
 
-## Release Strategy
-
-### Consistency window in manual per-module releases
-
-If `bindings/go/helm` depends on `bindings/go/credentials` and a developer manually releases
-`bindings/go/credentials@v1.2.0`, the `go.mod` of `bindings/go/helm` still pins the old version until a follow-up
-PR updates it. During that window, `bindings/go/helm` is internally consistent via `go.work` in local development,
-but its published `go.mod` references the old API. Any consumer resolving via `go get` (not `go.work`) gets a mixed
-build. The `concurrency: group: binding-release` guard prevents concurrent releases from racing but does not close
-this window.
-
-### Change detection
-
-A binding is scheduled for release when there is at least one commit that touched its directory since its
-last semver tag:
-
-```bash
-git log <lastTag>..HEAD -- bindings/go/<module>
-```
-
-`lastTag` is the highest semver tag matching `bindings/go/<module>/v*` found in the repository (including
-tags fetched from upstream). A module with no prior tag at all is never considered for automatic release.
-See *New binding lifecycle* below.
-
-### go.sum correctness requirement
-
-`go.work` is the source of truth for development and CI, so on `main` and feature branches the build is only
-guaranteed coherent *with* the workspace. `go.mod`/`go.sum` pins are **not** required to be standalone-consistent
-on every commit — the workspace shadows them. Standalone correctness (a build that resolves purely from
-`go.mod`/`go.sum` and the proxy, exactly what an external `go get` consumer sees) is enforced at two points only:
-
-* **Release tags**: every binding tag must point to a commit where `go.mod` and `go.sum` are correct and complete
-  for that module's declared dependencies. The release build runs `GOWORK=off` to prove this before the RC tag is
-  created (see *go.work in the release build*).
-* **Renovate `ocm-monorepo` pin PRs**: these bump internal binding pins, so they run with `GOWORK=off` to validate
-  the pins resolve standalone (see *Renovate pin-validation mode*).
-
-> **Known gap — `go.mod` consistency on `main`.** Because `go.work` masks stale or inconsistent `go.mod` version
-> pins, a drifted pin introduced on an ordinary feature PR is invisible until the next release or Renovate PR runs
-> with `GOWORK=off`. There is currently no general `GOWORK=off` tidy/consistency check on `main`. If this becomes a
-> problem, add a periodic or push-to-`main` job that runs `go mod tidy` (or a build) with `GOWORK=off` across all
-> modules and fails on a diff. This is the open question raised in the 29.06.2026 design discussion
-> ("how do we make sure `go.mod` is consistent on `main`").
-
-The release ordering creates a fundamental constraint: to update `blob/go.sum` with a checksum for `runtime@v0.0.9`,
-the Go toolchain needs to fetch `runtime@v0.0.9` from the module proxy. But the proxy only serves it after
-the `runtime/v0.0.9` tag has been pushed. The two operations cannot happen in the same step.
+## Release pipeline
 
 ### Phased bulk release
 
 `release-bindings.yaml` runs four ordered phases:
 
-1. **Plan**: discover all binding modules and topologically sort them by the dependency graph derived from
-   `go mod edit -json`. For each module, run the change detection above. Compute next semver tags for changed
-   modules and detect breaking changes from Conventional Commit markers (`feat!:`, `BREAKING CHANGE:`).
-2. **Test**: run unit and integration tests for every changed module in parallel.
-3. **Gate**: environment approval — a reviewer sees the full plan (changed modules, next tags, bump kinds,
-   changelogs) and test results before any tags are pushed.
-4. **Release**: for each dependency level (group of modules that share no intra-level dependencies) —
-   pin `go.mod`, update `go.sum`, commit, push all level tags at once, wait for the proxy to index them,
-   then move to the next level. After all binding levels, pin and tidy `cli` and `kubernetes/controller`
+1. **Plan** — discover all binding modules, topologically sort them by the `go mod edit -json` dependency graph, run
+   change detection per module, compute next semver tags, and flag breaking changes from Conventional Commit markers
+   (`feat!:`, `BREAKING CHANGE:`).
+2. **Test** — run unit and integration tests for every changed module in parallel.
+3. **Gate** — environment approval: a reviewer sees the full plan (changed modules, next tags, bump kinds, changelogs)
+   and test results before any tag is pushed.
+4. **Release** — process one dependency level at a time (below), then pin and tidy `cli` and `kubernetes/controller`
    in a final commit.
 
-The release phase processes one level at a time. All modules within a level are independent of each other,
-so their go.mod files and go.sum files can be updated together in a single commit. Each level's tags are
-pushed before the next level begins, so `go mod tidy` in the next level can fetch the checksums it needs
-from the proxy.
+**Change detection.** A binding is scheduled for release when at least one commit touched its directory since its last
+semver tag (`git log <lastTag>..HEAD -- bindings/go/<module>`). `lastTag` is the highest `bindings/go/<module>/v*` tag
+in the repo (including tags fetched from upstream). A module with no prior tag is never auto-released — see *New binding
+lifecycle*.
 
-### Dependency pinning and go.sum update
+### Why one dependency level at a time
 
-For each dependency level, all changed modules in that level are processed together:
+There is a hard ordering constraint: to write `blob/go.sum`'s checksum for `runtime@v0.0.9`, the toolchain must fetch
+`runtime@v0.0.9` from the proxy — but the proxy only serves it after `runtime/v0.0.9` is tagged and pushed. Tagging a
+version and consuming it cannot happen in one step. So the release walks the graph level by level:
 
 ```mermaid
 flowchart LR
-    A([level N]) --> B[pin go.mod\nall modules in level]
-    B --> C[go mod tidy\nall modules in level]
-    C --> D[commit\ngo.mod + go.sum]
-    D --> E[tag + push\nall level tags at once]
-    E --> F[wait for proxy\nto index level tags]
+    A([level N]) --> B[pin go.mod<br/>all modules in level]
+    B --> C[go mod tidy<br/>all modules in level]
+    C --> D[commit<br/>go.mod + go.sum]
+    D --> E[tag + push<br/>all level tags at once]
+    E --> F[wait for proxy<br/>to index level tags]
     F --> G([level N+1])
 ```
 
-By the time level N is processed, all tags from levels 0..N-1 are already on the proxy, so `go mod tidy`
-can fetch their checksums. Each tag points to a commit where `go.sum` is complete and valid for that module's
-declared dependencies.
+Modules within a level share no intra-level dependency, so they pin, tidy, commit, and tag together. By the time level
+N runs, levels 0..N-1 are already on the proxy, so `go mod tidy` can fetch their checksums, and each tag points to a
+commit whose `go.sum` is complete. After all binding levels, `cli` and `kubernetes/controller` are pinned and tidied
+in a final commit — by then every binding tag exists on the proxy.
 
-The dep version resolution follows the same logic regardless of whether a dep was released this run or
-previously:
+**Dependency version resolution** is uniform regardless of whether a dep was released this run:
 
-- **Released this run**: use the new tag computed by `planRelease`.
-- **Skipped/unchanged with an existing tag**: use the current latest tag, so consumers stay current with
-  upstream releases that happened outside the current run.
-- **Never tagged**: skip. See *New binding lifecycle* below.
-
-After all binding tags are pushed, `cli` and `kubernetes/controller` are pinned and tidied in a single
-final commit. By that point all binding tags exist on the proxy, so their `go.sum` entries are also complete.
-
-### go.work in the release build
-
-PR and CI builds use `go.work` throughout so that in-flight binding changes resolve against the local tree without
-requiring published tags.
-
-Release builds (`cli.yml`, `kubernetes-controller.yml` called from `release.yml`) run with `GOWORK=off`. By the time
-these builds run, `release-bindings.yaml` has already pushed all binding semver tags and committed correct `go.mod`
-and `go.sum` files for every module. Disabling the workspace forces the build to resolve dependencies exclusively
-from those pins and checksums — exactly what an external consumer gets via `go get`. This validates that the pins
-and checksums are correct before the RC tag is created.
+* released this run → use the new tag from `planRelease`;
+* unchanged but previously tagged → use its current latest tag (stays current with out-of-band releases);
+* never tagged → skip (*New binding lifecycle*).
 
 ### New binding lifecycle
 
-A binding that has never been tagged is skipped by `planRelease` — it appears in the gate summary as
-`(no prior tag; skipped)` and receives no semver tag in the bulk release. During this pre-release period the
-binding is still usable: dependents can reference it via a Go pseudo-version
-(`v0.0.0-<timestamp>-<commit>`) which the Go toolchain derives from the commit SHA. In workspace mode
-(`go.work`) this is transparent to developers — the local tree is used directly regardless of what version
-is declared in `go.mod`.
+A never-tagged binding is skipped by `planRelease` (`(no prior tag; skipped)` in the gate summary) and gets no tag. It
+is still usable meanwhile: dependents reference it by Go pseudo-version (`v0.0.0-<timestamp>-<commit>`), which the
+workspace makes transparent locally. To promote it:
 
-When the binding is ready for stable versioning:
+1. merge its implementation to `main`;
+2. manually trigger `release-go-submodule.yaml` to cut its initial tag (e.g. `bindings/go/newbinding/v0.0.1`);
+3. from the next bulk release on, `planRelease` manages it normally.
 
-1. Merge the binding's implementation to `main`.
-2. Manually trigger `release-go-submodule.yaml` targeting the new binding to create its initial tag
-   (e.g., `bindings/go/newbinding/v0.0.1`).
-3. From the next bulk release onwards, `planRelease` picks it up normally and the release loop manages its consumers.
+Promotion is therefore an explicit act, not a side-effect of the first bulk release that touches the binding.
 
-This makes the promotion of a new binding to stable versioning an explicit, intentional act rather than an
-automatic side-effect of the first bulk release that touches it.
+### Manual release and its consistency window
+
+The manual per-module release (`release-go-submodule.yaml`) stays available for isolated fixes and bootstrapping. Its
+limitation: if `bindings/go/helm` depends on `bindings/go/credentials` and you manually release `credentials@v1.2.0`,
+`helm`'s `go.mod` still pins the old version until a follow-up PR. Locally `go.work` hides this, but a `go get` consumer
+gets a mixed build until the pin is updated. The `concurrency: group: binding-release` guard prevents concurrent
+releases from racing but does not close this window — which is why the phased bulk release is the canonical path.
 
 ---
 
-## Implementation
+## Implementation notes
 
-### Module discovery and affected-set computation
+### Module discovery and the affected set
 
-`ci.yml` runs a `discover_modules` pre-job on every push and PR:
+`ci.yml`'s `discover_modules` pre-job runs on every push and PR:
 
-1. Enumerate all Go modules from `go.work` via `go work edit -json`.
-2. Build the full dependency graph across all modules using `go mod edit -json` (bindings, `cli`,
-   `kubernetes/controller`, and any other module in the workspace).
-3. Detect which modules have changed files in the PR (`git diff --name-only origin/main...HEAD`).
-4. Walk the graph forward (dependents direction) from each changed module to find all direct and indirect
-   dependents. The union of changed modules and their dependents is the **affected set**.
-5. Filter the affected set to binding modules only for the unit and integration test matrices. `cli` and
-   `kubernetes/controller` have dedicated workflows and are excluded from the binding test matrix.
-6. Output the affected sets for unit tests, integration tests, and lint.
+1. enumerate all Go modules in the workspace;
+2. build the full dependency graph across all modules (`go mod edit -json`) — bindings, `cli`,
+   `kubernetes/controller`, and anything else in the workspace;
+3. detect changed modules from `git diff --name-only origin/main...HEAD`;
+4. walk the graph forward (dependents direction) to get the **affected set** = changed modules ∪ their transitive
+   dependents;
+5. filter to binding modules for the unit/integration matrices (`cli` and `kubernetes/controller` have their own
+   workflows and are excluded);
+6. emit the affected sets for unit tests, integration tests, and lint.
 
-All test jobs use a full checkout with `go.work` enabled so cross-binding resolution works without
-published tags. If a developer adds a new binding but forgets to update `go.work`, the CI fails loudly
-— go.work is the source of truth, not a generated file.
-
-### Renovate pin-validation mode
-
-Renovate's `ocm-monorepo` group bumps internal binding versions across `go.mod` files. Running these
-PRs with `go.work` active would shadow the pinned versions — the workspace resolves binding modules
-from disk and the tests would pass even if the pin is wrong.
-
-When the PR branch matches `renovate/ocm-monorepo*`, `discover_modules` sets `validate_pins: true`.
-Both the binding **unit** and **integration** test matrices then run with `GOWORK=off`, validating that the
-pinned versions actually work standalone without workspace override. The detection is tied directly to the
-Renovate group slug (`groupSlug: 'ocm-monorepo'` in `renovate.json5`) so no go.mod content parsing is needed.
+**Why graph-change-based, not path-change-based.** A path filter (`dorny/paths-filter`) only knows *which files
+changed*, not *which modules those changes can break*. Catching cross-module regressions with it would mean
+hand-maintaining expansion rules that mirror the import graph — exactly the dependency relationships `go.mod` already
+declares. Now that a single PR can change a binding and its dependents together (the workspace makes this possible —
+the friction this epic removed), the set of modules a change touches is no longer "the directory the diff lands in." We
+derive the affected set from the actual dependency graph instead, so a new edge or a new binding is picked up
+automatically with no rule to keep in sync.
 
 ### Dependency graph and topological sort
 
-`buildGraph` in `.github/scripts/release-bindings.js` derives the dependency graph from `go.mod` files:
+`buildGraph` in `.github/scripts/release-bindings.js` derives the graph from `go.mod` via the toolchain (not regex), so
+replace directives, indirect markers, and multi-line blocks are all handled correctly:
 
 ```js
-// For each binding module:
-internalDeps = go
-mod
-edit - json | Require[]
-    .filter(path => path.startsWith("ocm.software/open-component-model/bindings/go/"))
+// internal binding deps of a module, from `go mod edit -json`:
+internalDeps = Require
+  .map(r => r.Path)
+  .filter(p => p.startsWith('ocm.software/open-component-model/bindings/go/'));
 
-// Topological sort (Kahn's algorithm) — deps precede their dependents
-ordered = topoSort(modules, depsMap)
+// Kahn's algorithm — deps precede their dependents:
+ordered = topoSort(modules, depsMap);
 ```
 
-Using `go mod edit -json` (toolchain-authoritative) rather than regex parsing ensures all `go.mod` syntax
-(replace directives, indirect markers, multi-line blocks) is handled correctly.
+### Renovate pin-validation
+
+Renovate's `ocm-monorepo` group bumps internal binding pins across `go.mod` files. With the workspace active those PRs
+would pass even with a wrong pin, because the workspace resolves bindings from disk. When the branch matches
+`renovate/ocm-monorepo*`, `discover_modules` sets `validate_pins: true` and both the unit and integration matrices run
+`GOWORK=off`, so a bad pin fails. Detection is tied to the group slug (`groupSlug: 'ocm-monorepo'` in `renovate.json5`)
+— no `go.mod` parsing needed.
 
 ### Consumer trigger
 
-Consumer tests (`cli`, `kubernetes/controller`) are triggered by the affected-set computation in `discover_modules`,
-not by a static path filter. This means a binding change that reaches a consumer through the import graph triggers
-that consumer's tests, while an unrelated binding change does not. The `pipeline.yml` path filter continues to
-trigger the full consumer build pipeline on direct changes to `cli/**` or `kubernetes/controller/**`.
+`cli` and `kubernetes/controller` tests are triggered by the affected-set computation, not a static path filter: a
+binding change reaches them through the import graph, while an unrelated binding change does not. `pipeline.yml`'s path
+filter still triggers the full consumer build on direct changes to `cli/**` or `kubernetes/controller/**`.
 
 ---
 
-## External Alternatives Evaluated
+## Alternatives considered
 
-Two established multi-module release toolchains were reviewed and rejected:
-
-**Kubernetes `publishing-bot`** mirrors staging modules to separate read-only repos via `git filter-branch`.
-Dependency ordering is declared in a hand-maintained `rules.yaml` DAG per module. Not applicable: the
-separate-repo mirroring exists because Kubernetes module paths don't match their monorepo layout — institutional
-baggage irrelevant to us. Their manually maintained DAG is strictly worse than our auto-derived ordering from
-`go mod edit -json`.
-
-**OpenTelemetry `multimod` + `crosslink`** — `multimod` bumps versions from a declarative `versions.yaml` and
-rewrites `go.mod` files via regex. `crosslink` derives the topo-sort from `go.mod` parsing. Not adopted:
-regex `go.mod` rewriting mishandles edge cases silently. `versions.yaml` requires operator edits on every
-release. `multimod tag` is non-idempotent (open upstream bug). `crosslink`'s `go.mod`-derived topo-sort is
-exactly what `buildGraph` does — it confirms our approach is correct prior art. We use `go mod edit -json`
-(toolchain-authoritative) instead of regex.
-
----
-
-## Conclusion
-
-The chosen approach directly addresses each identified pain point:
-
-* **PR overhead**: the committed `go.work` allows developers to make cross-binding changes in a single PR. The
-  workspace ensures all interdependent modules resolve against the current tree, not published versions, so a
-  change spanning `bindings/go/credentials` and `bindings/go/helm` can be reviewed and merged together.
-* **CI complexity**: module discovery is two steps (enumerate from `go.work`, build the dependency graph from
-  `go.mod`). Graph-aware filtering then runs the changed modules plus all their dependents, so cross-module
-  regressions are still caught without testing every binding on every PR.
-* **Release flow**: the existing release flow (`release.yml`) is extended to invoke `release-bindings.yaml` before
-  tagging the CLI and controller. Binding tags are created automatically in dependency order as part of every
-  release, with no manual steps required.
-
-The approach trades CI compute (running all binding tests on every PR) for correctness and
-simplicity. The phased bulk release with a human gate provides the ordering and consistency guarantees that manual
-per-module releases cannot, while keeping the escape hatch for isolated fixes and new binding bootstrapping.
+Two established multi-module release toolchains were evaluated and rejected — Kubernetes `publishing-bot`
+(separate-repo mirroring plus a hand-maintained DAG; institutional baggage we don't share) and OpenTelemetry
+`multimod`/`crosslink` (regex `go.mod` rewriting and a `versions.yaml` that needs operator edits every release).
+`crosslink`'s `go.mod`-derived topo-sort is the same approach as our `buildGraph`, confirming the direction.
