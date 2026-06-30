@@ -89,7 +89,9 @@ jobs:
 
       - name: Init workspace
         if: ${{ !inputs.validate_pins }}
-        run: task init/go.work
+        run: |
+          rm -f go.work go.work.sum
+          task init/go.work
 
       # Setup Docker Buildx for multi-arch and advanced image building
       - name: Setup docker/buildx
