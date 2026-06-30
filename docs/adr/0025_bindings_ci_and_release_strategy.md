@@ -11,24 +11,23 @@
 * [Context](#context)
 * [Decisions](#decisions)
 * [PR vs release builds](#pr-vs-release-builds)
-  * [The one PR-time exception](#the-one-pr-time-exception)
 * [The go.work model](#the-gowork-model)
-  * [Why go.work is committed](#why-gowork-is-committed)
-  * [Verifying go.work in PRs](#verifying-gowork-in-prs)
-  * [Checkout strategy](#checkout-strategy)
-  * [go.sum correctness and the one known gap](#gosum-correctness-and-the-one-known-gap)
+    * [Why go.work is committed](#why-gowork-is-committed)
+    * [Verifying go.work in PRs](#verifying-gowork-in-prs)
+    * [Checkout strategy](#checkout-strategy)
+    * [go.sum correctness and the one known gap](#gosum-correctness-and-the-one-known-gap)
 * [Release pipeline](#release-pipeline)
-  * [Phased bulk release](#phased-bulk-release)
-  * [Change detection](#change-detection)
-  * [Why one dependency level at a time](#why-one-dependency-level-at-a-time)
-  * [New binding lifecycle](#new-binding-lifecycle)
-  * [Manual release and its consistency window](#manual-release-and-its-consistency-window)
+    * [Phased bulk release](#phased-bulk-release)
+    * [Change detection](#change-detection)
+    * [Why one dependency level at a time](#why-one-dependency-level-at-a-time)
+    * [New binding lifecycle](#new-binding-lifecycle)
+    * [Manual release and its consistency window](#manual-release-and-its-consistency-window)
 * [Implementation notes](#implementation-notes)
-  * [Module discovery and the affected set](#module-discovery-and-the-affected-set)
-  * [Why graph-change-based, not path-change-based](#why-graph-change-based-not-path-change-based)
-  * [Dependency graph and topological sort](#dependency-graph-and-topological-sort)
-  * [Renovate pin-validation](#renovate-pin-validation)
-  * [Consumer trigger](#consumer-trigger)
+    * [Module discovery and the affected set](#module-discovery-and-the-affected-set)
+    * [Why graph-change-based, not path-change-based](#why-graph-change-based-not-path-change-based)
+    * [Dependency graph and topological sort](#dependency-graph-and-topological-sort)
+    * [Renovate pin-validation](#renovate-pin-validation)
+    * [Consumer trigger](#consumer-trigger)
 * [Alternatives considered](#alternatives-considered)
 
 ---
@@ -36,7 +35,8 @@
 ## Context
 
 The OCM monorepo maintains 20+ independently versioned Go binding modules under `bindings/go/*` (CEL, Helm, OCI,
-sigstore, …). They depend on each other (many import `bindings/go/credentials` or `bindings/go/runtime`) and are consumed
+sigstore, …). They depend on each other (many import `bindings/go/credentials` or `bindings/go/runtime`) and are
+consumed
 by the top-level `cli` and `kubernetes/controller` modules.
 
 Treating each binding as its own module is correct for external consumers — they can pin a single binding at a specific
@@ -71,7 +71,8 @@ only when the graph proves it cannot be affected.
 **Release.** Use an automated phased bulk release as the canonical path: plan, test, gate, and release, in dependency
 order. The rejected option was making manual per-module release the primary path.
 The phased release guarantees dependency ordering, gates on human review before any tag is pushed, and pins consumers in
-one step. Manual per-module release cannot guarantee ordering and leaves a consistency window open. It is kept only as an
+one step. Manual per-module release cannot guarantee ordering and leaves a consistency window open. It is kept only as
+an
 escape hatch for isolated fixes and for bootstrapping new bindings.
 
 **Consequence.** With these decisions, a change spanning several bindings becomes one PR whose affected tests run
@@ -85,15 +86,15 @@ release provides the ordering and consistency guarantees the manual path cannot.
 The same workflows run in two modes, switched by a single `validate_pins` input. PR/CI builds resolve against the
 committed workspace. Release builds disable it, to prove the published `go.mod`/`go.sum` pins are correct on their own.
 
-| | PR / CI build | Release build |
-|---|---|---|
-| Triggered by | `pull_request`, push to `main` | release workflow (tagged) |
-| `validate_pins` | `false` | `true` |
-| Workspace | committed `go.work` — **enabled** | **`GOWORK=off`** |
-| Checkout | full — every module on disk | sparse — only the built module/scenario |
-| Deps resolve from | local module tree via the workspace | `go.mod`/`go.sum` pins + module proxy |
-| `go.mod` pins | may be stale; shadowed by the workspace | authoritative; this build validates them |
-| Proves | in-flight cross-binding changes compile and test together, no tags needed | a `go get` consumer gets a correct, complete build |
+|                   | PR / CI build                                                             | Release build                                      |
+|-------------------|---------------------------------------------------------------------------|----------------------------------------------------|
+| Triggered by      | `pull_request`, push to `main`                                            | release workflow (tagged)                          |
+| `validate_pins`   | `false`                                                                   | `true`                                             |
+| Workspace         | committed `go.work` — **enabled**                                         | **`GOWORK=off`**                                   |
+| Checkout          | full — every module on disk                                               | sparse — only the built module/scenario            |
+| Deps resolve from | local module tree via the workspace                                       | `go.mod`/`go.sum` pins + module proxy              |
+| `go.mod` pins     | may be stale; shadowed by the workspace                                   | authoritative; this build validates them           |
+| Proves            | in-flight cross-binding changes compile and test together, no tags needed | a `go get` consumer gets a correct, complete build |
 
 ```mermaid
 flowchart TD
@@ -106,12 +107,6 @@ flowchart TD
     G --> H["resolve from go.mod pins + proxy"]
 ```
 
-### The one PR-time exception
-
-Renovate's `ocm-monorepo` group PRs bump internal binding pins, so they run `validate_pins=true` (`GOWORK=off`) even
-though they are PRs. Otherwise the workspace would shadow the very pins the PR is changing. They keep a full checkout,
-and only the workspace is disabled. See *Renovate pin-validation* below.
-
 ---
 
 ## The go.work model
@@ -123,7 +118,8 @@ and CI. On `main` and feature branches the binding `go.mod` files do not necessa
 versions. The workspace redirects every internal import to the local tree, so the committed `go.work` is what makes the
 monorepo build coherently. The `go.mod` pins only become authoritative at release time.
 
-When a module is added or removed, the committed `go.work` must be updated in the same change (`go work use ./<module>`).
+When a module is added or removed, the committed `go.work` must be updated in the same change (
+`go work use ./<module>`).
 If it drifts from the module tree, workspace-mode CI fails loudly, because `go.work` is the source of truth and not a
 generated file. The `task init/go.work` task is kept only as a local bootstrap helper that regenerates it from scratch.
 CI never needs it, because the committed file is already present after checkout.
@@ -151,16 +147,16 @@ Workspace-mode jobs use a **full** checkout, because the committed `go.work` ref
 fails on missing paths. Sparse checkout is used only by **pin-validation** jobs (`GOWORK=off`). They resolve from
 `go.mod`/`go.sum` plus the proxy, so they only need the target module present.
 
-| Job | Checkout | Workspace |
-|---|---|---|
-| lint | full | committed `go.work` |
-| binding unit tests | full | committed `go.work` |
-| binding unit tests (pin-validate) | full | `GOWORK=off` (Renovate PRs) |
-| binding integration tests | full | committed `go.work` |
-| `cli` / controller build | full | committed `go.work` |
+| Job                                | Checkout                  | Workspace                    |
+|------------------------------------|---------------------------|------------------------------|
+| lint                               | full                      | committed `go.work`          |
+| binding unit tests                 | full                      | committed `go.work`          |
+| binding unit tests (pin-validate)  | full                      | `GOWORK=off` (Renovate PRs)  |
+| binding integration tests          | full                      | committed `go.work`          |
+| `cli` / controller build           | full                      | committed `go.work`          |
 | `cli` / controller build (release) | sparse (module + scripts) | `GOWORK=off` (validate pins) |
-| `e2e`, `conformance` | full | committed `go.work` |
-| `e2e`, `conformance` (release) | sparse (scenario only) | `GOWORK=off` (validate pins) |
+| `e2e`, `conformance`               | full                      | committed `go.work`          |
+| `e2e`, `conformance` (release)     | sparse (scenario only)    | `GOWORK=off` (validate pins) |
 
 ### go.sum correctness and the one known gap
 
@@ -229,7 +225,8 @@ When pinning, each internal dependency is resolved the same way regardless of wh
 
 ### New binding lifecycle
 
-A never-tagged binding is skipped by the plan phase (shown as `no prior tag; skipped` in the gate summary) and gets no tag. It
+A never-tagged binding is skipped by the plan phase (shown as `no prior tag; skipped` in the gate summary) and gets no
+tag. It
 is still usable in the meantime: dependents reference it by Go pseudo-version (`v0.0.0-<timestamp>-<commit>`), which the
 workspace makes transparent locally. To promote it:
 
@@ -242,7 +239,8 @@ Promotion is therefore an explicit act, not a side-effect of the first bulk rele
 ### Manual release and its consistency window
 
 The manual per-module release stays available for isolated fixes and bootstrapping. It has
-one limitation. If `bindings/go/helm` depends on `bindings/go/credentials` and you manually release `credentials@v1.2.0`,
+one limitation. If `bindings/go/helm` depends on `bindings/go/credentials` and you manually release
+`credentials@v1.2.0`,
 then `helm`'s `go.mod` still pins the old version until a follow-up PR. Locally `go.work` hides this, but a `go get`
 consumer gets a mixed build until the pin is updated. A concurrency guard keeps two releases from racing, but it does
 not close this window. That is why the phased bulk release is the canonical path.
