@@ -22,6 +22,7 @@ jobs:
       affected_bindings_json:    ${{ steps.discover.outputs.affected_bindings_json }}
       affected_unit_json:        ${{ steps.discover.outputs.affected_unit_json }}
       affected_integration_json: ${{ steps.discover.outputs.affected_integration_json }}
+      affected_lint_json:        ${{ steps.discover.outputs.affected_lint_json }}
       test_cli:                  ${{ steps.discover.outputs.test_cli }}
       test_controller:           ${{ steps.discover.outputs.test_controller }}
     steps:
@@ -52,13 +53,14 @@ jobs:
   golangci_lint:
     name: "golangci-lint / ${{ matrix.module }}"
     needs: discover_modules
+    if: ${{ needs.discover_modules.outputs.affected_lint_json != '[]' }}
     runs-on: ubuntu-24.04-arm
     permissions:
       checks: write
     strategy:
       fail-fast: false
       matrix:
-        module: ${{ fromJSON(needs.discover_modules.outputs.modules_json) }}
+        module: ${{ fromJSON(needs.discover_modules.outputs.affected_lint_json) }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:

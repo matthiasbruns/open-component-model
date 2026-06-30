@@ -195,10 +195,18 @@ export async function discoverModules({ core, execSyncFn = _execSync }) {
   const testCLI = isConsumerAffected('cli', affectedSet, changedFiles, repoRoot, execSyncFn);
   const testController = isConsumerAffected('kubernetes/controller', affectedSet, changedFiles, repoRoot, execSyncFn);
 
+  // 6. Combined lint set — affected bindings + affected consumers
+  const affectedLint = [
+    ...affectedBindings,
+    ...(testCLI ? ['cli'] : []),
+    ...(testController ? ['kubernetes/controller'] : []),
+  ];
+
   core.setOutput('modules_json', JSON.stringify(allModules));
   core.setOutput('affected_bindings_json', JSON.stringify(affectedBindings));
   core.setOutput('affected_unit_json', JSON.stringify(unitTestModules));
   core.setOutput('affected_integration_json', JSON.stringify(integrationTestModules));
+  core.setOutput('affected_lint_json', JSON.stringify(affectedLint));
   core.setOutput('test_cli', String(testCLI));
   core.setOutput('test_controller', String(testController));
 
@@ -206,6 +214,7 @@ export async function discoverModules({ core, execSyncFn = _execSync }) {
   console.log('🎯 Affected bindings:', affectedBindings);
   console.log('🧪 Affected unit:', unitTestModules);
   console.log('🧬 Affected integration:', integrationTestModules);
+  console.log('🔍 Affected lint:', affectedLint);
   console.log('🔧 Test CLI:', testCLI, '| Test Controller:', testController);
 }
 
