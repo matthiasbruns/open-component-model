@@ -108,23 +108,6 @@ function getChangedFiles(baseBranch, execSyncFn) {
   }
 }
 
-/**
- * Check whether a consumer module (cli, kubernetes/controller) is affected.
- * True if its own code changed, or any binding it imports is in the affected set.
- *
- * @param {string} consumerPath   e.g. "cli"
- * @param {Set<string>} affectedBindings
- * @param {string[]} changedFiles
- * @param {string} repoRoot
- * @param {function} execSyncFn
- * @returns {boolean}
- */
-export function isConsumerAffected(consumerPath, affectedBindings, changedFiles, repoRoot, execSyncFn) {
-  if (changedFiles.some(f => f.startsWith(`${consumerPath}/`))) return true;
-  return internalDepsOf(repoRoot, consumerPath, execSyncFn)
-    .some(dep => affectedBindings.has(dep));
-}
-
 // ---------------------------------------------------------------------------
 // Testability helpers
 // ---------------------------------------------------------------------------
@@ -161,61 +144,48 @@ export function splitByTestability(modules, execSyncFn = _execSync) {
 /**
  * Step: Discover Go Modules and compute the affected set for this PR/push.
  *
+ * The dependency graph is built for ALL Go modules (bindings, cli, controller,
+ * etc.) so consumers appear naturally in the affected set when their binding
+ * deps change — no hardcoded module names anywhere.
+ *
  * Outputs:
- *   modules_json              — all binding modules (for lint)
- *   affected_bindings_json    — bindings directly or transitively affected
- *   affected_integration_json — subset of above that have integration tests
- *   test_cli                  — "true" if cli should be tested
- *   test_controller           — "true" if kubernetes/controller should be tested
+ *   modules_json              — all Go modules discovered in the repo
+ *   affected_modules_json     — all modules directly or transitively affected
+ *   affected_unit_json        — subset with a 'test' Taskfile target
+ *   affected_integration_json — subset with a 'test/integration' Taskfile target
+ *   affected_lint_json        — same as affected_modules_json (all can be linted)
  */
 export async function discoverModules({ core, execSyncFn = _execSync }) {
   const repoRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const baseBranch = process.env.GITHUB_BASE_REF ?? ''; // set on PRs, empty on push
 
-  // 1. All binding modules from go.work
+  // 1. All Go modules from go.work
   const raw = execSyncFn('task go_modules --output interleaved', { encoding: 'utf-8' });
   const allModules = raw.split('\n').filter(Boolean);
-  const bindingModules = allModules.filter(m => m.startsWith('bindings/'));
 
-  // 2. Dependency graph and changed files
-  const dependentsOf = buildDependentsMap(bindingModules, repoRoot, execSyncFn);
+  // 2. Full dependency graph across all modules + changed files
+  const dependentsOf = buildDependentsMap(allModules, repoRoot, execSyncFn);
   const changedFiles = getChangedFiles(baseBranch, execSyncFn);
 
-  // 3. Affected set — fall back to all bindings when diff is unavailable (push to main)
-  const changedBindings = changedModulesFromFiles(bindingModules, changedFiles);
-  const affectedBindings = changedFiles.length > 0
-    ? computeAffectedSet(changedBindings, bindingModules, dependentsOf)
-    : bindingModules;
+  // 3. Affected set — fall back to all modules when diff is unavailable (push to main)
+  const changedModules = changedModulesFromFiles(allModules, changedFiles);
+  const affectedModules = changedFiles.length > 0
+    ? computeAffectedSet(changedModules, allModules, dependentsOf)
+    : allModules;
 
-  // 4. Unit and integration subsets of the affected set
-  const { unitTestModules, integrationTestModules } = splitByTestability(affectedBindings, execSyncFn);
+  // 4. Testability subsets of the affected set
+  const { unitTestModules, integrationTestModules } = splitByTestability(affectedModules, execSyncFn);
 
-  // 5. Consumer impact
-  const affectedSet = new Set(affectedBindings);
-  const testCLI = isConsumerAffected('cli', affectedSet, changedFiles, repoRoot, execSyncFn);
-  const testController = isConsumerAffected('kubernetes/controller', affectedSet, changedFiles, repoRoot, execSyncFn);
-
-  // 6. Combined lint set — affected bindings + affected consumers
-  const affectedLint = [
-    ...affectedBindings,
-    ...(testCLI ? ['cli'] : []),
-    ...(testController ? ['kubernetes/controller'] : []),
-  ];
-
-  core.setOutput('modules_json', JSON.stringify(allModules));
-  core.setOutput('affected_bindings_json', JSON.stringify(affectedBindings));
-  core.setOutput('affected_unit_json', JSON.stringify(unitTestModules));
+  core.setOutput('modules_json',              JSON.stringify(allModules));
+  core.setOutput('affected_modules_json',     JSON.stringify(affectedModules));
+  core.setOutput('affected_unit_json',        JSON.stringify(unitTestModules));
   core.setOutput('affected_integration_json', JSON.stringify(integrationTestModules));
-  core.setOutput('affected_lint_json', JSON.stringify(affectedLint));
-  core.setOutput('test_cli', String(testCLI));
-  core.setOutput('test_controller', String(testController));
+  core.setOutput('affected_lint_json',        JSON.stringify(affectedModules));
 
   console.log('📦 All modules:', allModules.length);
-  console.log('🎯 Affected bindings:', affectedBindings);
-  console.log('🧪 Affected unit:', unitTestModules);
-  console.log('🧬 Affected integration:', integrationTestModules);
-  console.log('🔍 Affected lint:', affectedLint);
-  console.log('🔧 Test CLI:', testCLI, '| Test Controller:', testController);
+  console.log('🎯 Affected:', affectedModules);
+  console.log('🧪 Unit:', unitTestModules);
+  console.log('🧬 Integration:', integrationTestModules);
 }
 
 /**

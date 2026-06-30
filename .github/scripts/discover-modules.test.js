@@ -3,7 +3,6 @@ import {
   computeAffectedSet,
   changedModulesFromFiles,
   buildDependentsMap,
-  isConsumerAffected,
   splitByTestability,
 } from './discover-modules.js';
 
@@ -162,55 +161,45 @@ console.log('Testing buildDependentsMap...');
 }
 
 // ---------------------------------------------------------------------------
-// isConsumerAffected
+// consumers appear naturally via the graph (no hardcoding)
 // ---------------------------------------------------------------------------
-console.log('Testing isConsumerAffected...');
+console.log('Testing consumer graph inclusion...');
 
 {
-  const affected = new Set(['bindings/go/oci']);
-  const noImports = () => JSON.stringify({ Require: [] });
-  const importsOCI = () => JSON.stringify({
-    Require: [{ Path: 'ocm.software/open-component-model/bindings/go/oci' }],
-  });
-  const importsRuntime = () => JSON.stringify({
-    Require: [{ Path: 'ocm.software/open-component-model/bindings/go/runtime' }],
-  });
+  // Graph: runtime ← oci ← cli (cli depends on oci which depends on runtime)
+  const allModules = ['bindings/go/runtime', 'bindings/go/oci', 'cli'];
 
-  assert.strictEqual(
-    isConsumerAffected('cli', affected, ['cli/cmd/main.go'], '/root', noImports),
-    true,
-    'consumer own code changed → affected',
+  const mockExec = (_cmd, opts) => {
+    const mod = opts.cwd.replace('/root/', '');
+    const deps = {
+      'bindings/go/runtime': [],
+      'bindings/go/oci':     ['bindings/go/runtime'],
+      'cli':                 ['bindings/go/oci'],
+    }[mod] ?? [];
+    return JSON.stringify({ Require: deps.map(d => ({ Path: `ocm.software/open-component-model/${d}` })) });
+  };
+
+  const dependentsOf = buildDependentsMap(allModules, '/root', mockExec);
+
+  // cli depends on oci, so when oci changes cli is in the affected set
+  assert.deepStrictEqual(
+    computeAffectedSet(['bindings/go/oci'], allModules, dependentsOf),
+    ['bindings/go/oci', 'cli'],
+    'cli included when its binding dep is affected',
   );
 
-  assert.strictEqual(
-    isConsumerAffected('cli', affected, [], '/root', importsOCI),
-    true,
-    'consumer imports affected binding → affected',
+  // cli changes → only cli affected (nothing depends on cli)
+  assert.deepStrictEqual(
+    computeAffectedSet(['cli'], allModules, dependentsOf),
+    ['cli'],
+    'cli code change → only cli affected',
   );
 
-  assert.strictEqual(
-    isConsumerAffected('cli', affected, [], '/root', importsRuntime),
-    false,
-    'consumer only imports unaffected bindings → not affected',
-  );
-
-  assert.strictEqual(
-    isConsumerAffected('cli', affected, [], '/root', noImports),
-    false,
-    'no imports, no file changes → not affected',
-  );
-
-  assert.strictEqual(
-    isConsumerAffected('cli', affected, [], '/root', () => { throw new Error(); }),
-    false,
-    'go mod edit failure → not affected (safe fallback)',
-  );
-
-  // File change in a different consumer must not trigger this consumer
-  assert.strictEqual(
-    isConsumerAffected('cli', affected, ['kubernetes/controller/main.go'], '/root', noImports),
-    false,
-    'file change in different consumer does not affect cli',
+  // .github change → no module path match → empty affected set
+  assert.deepStrictEqual(
+    changedModulesFromFiles(allModules, ['.github/workflows/ci.yml']),
+    [],
+    'workflow-only change → no modules affected',
   );
 }
 

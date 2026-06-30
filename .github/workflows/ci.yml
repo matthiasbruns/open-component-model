@@ -19,12 +19,10 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       modules_json:              ${{ steps.discover.outputs.modules_json }}
-      affected_bindings_json:    ${{ steps.discover.outputs.affected_bindings_json }}
+      affected_modules_json:     ${{ steps.discover.outputs.affected_modules_json }}
       affected_unit_json:        ${{ steps.discover.outputs.affected_unit_json }}
       affected_integration_json: ${{ steps.discover.outputs.affected_integration_json }}
       affected_lint_json:        ${{ steps.discover.outputs.affected_lint_json }}
-      test_cli:                  ${{ steps.discover.outputs.test_cli }}
-      test_controller:           ${{ steps.discover.outputs.test_controller }}
     steps:
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
