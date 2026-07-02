@@ -10,7 +10,7 @@ import (
 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/wget/access"
-	v1 "ocm.software/open-component-model/bindings/go/wget/access/spec/v1"
+	v2 "ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
 )
 
 func TestScheme_Convert(t *testing.T) {
@@ -18,11 +18,11 @@ func TestScheme_Convert(t *testing.T) {
 
 	t.Run("converts versioned type", func(t *testing.T) {
 		raw := &runtime.Raw{
-			Type: runtime.NewVersionedType("wget", v1.Version),
+			Type: runtime.NewVersionedType("wget", v2.Version),
 			Data: []byte(`{"url":"https://example.com/file.tar.gz"}`),
 		}
 
-		wget := v1.Wget{}
+		wget := v2.Wget{}
 		err := access.Scheme.Convert(raw, &wget)
 		require.NoError(t, err)
 		assert.Equal(t, "https://example.com/file.tar.gz", wget.URL)
@@ -34,7 +34,7 @@ func TestScheme_Convert(t *testing.T) {
 			Data: []byte(`{"url":"https://example.com/file.tar.gz"}`),
 		}
 
-		wget := v1.Wget{}
+		wget := v2.Wget{}
 		err := access.Scheme.Convert(raw, &wget)
 		require.NoError(t, err)
 		assert.Equal(t, "https://example.com/file.tar.gz", wget.URL)
@@ -46,7 +46,7 @@ func TestScheme_Convert(t *testing.T) {
 			Data: []byte(`{}`),
 		}
 
-		wget := v1.Wget{}
+		wget := v2.Wget{}
 		err := access.Scheme.Convert(raw, &wget)
 		assert.Error(t, err)
 	})
@@ -62,7 +62,7 @@ func wgetAccessResource(t *testing.T, data map[string]any) *descruntime.Resource
 	r.Version = "1.0.0"
 	r.Type = "blob"
 	r.Access = &runtime.Raw{
-		Type: runtime.NewVersionedType("wget", v1.Version),
+		Type: runtime.NewVersionedType("wget", v2.Version),
 		Data: raw,
 	}
 	return r

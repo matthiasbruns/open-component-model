@@ -6,7 +6,7 @@ import (
 
 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	"ocm.software/open-component-model/bindings/go/runtime"
-	v1 "ocm.software/open-component-model/bindings/go/wget/access/spec/v1"
+	v2 "ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
 )
 
 const (
@@ -20,9 +20,9 @@ func init() {
 }
 
 func MustAddToScheme(scheme *runtime.Scheme) {
-	wget := &v1.Wget{}
+	wget := &v2.Wget{}
 	scheme.MustRegisterWithAlias(wget,
-		runtime.NewVersionedType(WgetConsumerType, v1.Version),
+		runtime.NewVersionedType(WgetConsumerType, v2.Version),
 		runtime.NewUnversionedType(WgetConsumerType),
 	)
 }
@@ -45,7 +45,7 @@ func (w *WgetAccess) GetResourceCredentialConsumerIdentity(ctx context.Context, 
 		return nil, fmt.Errorf("resource access is required")
 	}
 
-	wget := v1.Wget{}
+	wget := v2.Wget{}
 	if err := Scheme.Convert(resource.Access, &wget); err != nil {
 		return nil, fmt.Errorf("error converting resource access spec: %w", err)
 	}

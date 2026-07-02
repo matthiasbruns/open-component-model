@@ -1,12 +1,14 @@
 module ocm.software/open-component-model/bindings/go/wget
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/stretchr/testify v1.11.1
 	ocm.software/open-component-model/bindings/go/blob v0.0.13
+	ocm.software/open-component-model/bindings/go/constructor v0.0.11
 	ocm.software/open-component-model/bindings/go/credentials v0.0.14
-	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260616162616-fac66c3e8710
+	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260625065312-d374c10f9e61
+	ocm.software/open-component-model/bindings/go/http v0.0.0-20260702073142-7fbde86e20d8
 	ocm.software/open-component-model/bindings/go/repository v0.0.10
 	ocm.software/open-component-model/bindings/go/runtime v0.0.8
 )
@@ -20,8 +22,12 @@ require (
 	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	ocm.software/open-component-model/bindings/go/configuration v0.0.15 // indirect
+	ocm.software/open-component-model/bindings/go/dag v0.0.6 // indirect
+	ocm.software/open-component-model/bindings/go/descriptor/normalisation v0.0.0-20260625071532-ea5a17b8a42c // indirect
 	ocm.software/open-component-model/bindings/go/descriptor/v2 v2.0.3-alpha3 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
