@@ -21,8 +21,8 @@ import (
 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/wget/access"
-	v1 "ocm.software/open-component-model/bindings/go/wget/access/spec/v1"
 	"ocm.software/open-component-model/bindings/go/wget/repository"
+	v2 "ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
 	credv1 "ocm.software/open-component-model/bindings/go/wget/spec/credentials/v1"
 )
 
@@ -61,7 +61,7 @@ func wgetResource(t *testing.T, spec map[string]any) *descruntime.Resource {
 	r.Version = "1.0.0"
 	r.Type = "blob"
 	r.Access = &runtime.Raw{
-		Type: runtime.NewVersionedType("wget", v1.Version),
+		Type: runtime.NewVersionedType("wget", v2.Version),
 		Data: raw,
 	}
 	return r
@@ -461,13 +461,13 @@ func Test_Integration_WgetSchemeRegistration(t *testing.T) {
 	t.Run("scheme resolves versioned type", func(t *testing.T) {
 		r := require.New(t)
 
-		typ := runtime.NewVersionedType("wget", v1.Version)
+		typ := runtime.NewVersionedType("wget", v2.Version)
 		r.True(access.Scheme.IsRegistered(typ))
 
 		obj, err := access.Scheme.NewObject(typ)
 		r.NoError(err)
 
-		wget, ok := obj.(*v1.Wget)
+		wget, ok := obj.(*v2.Wget)
 		r.True(ok)
 		r.NotNil(wget)
 	})
@@ -482,8 +482,8 @@ func Test_Integration_WgetSchemeRegistration(t *testing.T) {
 	t.Run("round-trip through scheme convert", func(t *testing.T) {
 		r := require.New(t)
 
-		original := &v1.Wget{
-			Type:       runtime.NewVersionedType("wget", v1.Version),
+		original := &v2.Wget{
+			Type:       runtime.NewVersionedType("wget", v2.Version),
 			URL:        "https://example.com/resource.tar.gz",
 			MediaType:  "application/x-tar+gzip",
 			Header:     map[string][]string{"Authorization": {"Bearer token"}},
@@ -500,7 +500,7 @@ func Test_Integration_WgetSchemeRegistration(t *testing.T) {
 			Data: data,
 		}
 
-		converted := &v1.Wget{}
+		converted := &v2.Wget{}
 		r.NoError(access.Scheme.Convert(raw, converted))
 
 		assert.Equal(t, original.URL, converted.URL)
@@ -514,7 +514,7 @@ func Test_Integration_WgetSchemeRegistration(t *testing.T) {
 	t.Run("JSON schema is available", func(t *testing.T) {
 		r := require.New(t)
 
-		schema := v1.Wget{}.JSONSchema()
+		schema := v2.Wget{}.JSONSchema()
 		r.NotEmpty(schema)
 
 		var parsed map[string]any
@@ -548,7 +548,7 @@ func Test_Integration_WgetPluginRegistration(t *testing.T) {
 	require.NotNil(t, scheme)
 
 	for _, typ := range []runtime.Type{
-		runtime.NewVersionedType("wget", v1.Version),
+		runtime.NewVersionedType("wget", v2.Version),
 		runtime.NewUnversionedType("wget"),
 	} {
 		t.Run(fmt.Sprintf("scheme has type %s", typ), func(t *testing.T) {
@@ -557,7 +557,7 @@ func Test_Integration_WgetPluginRegistration(t *testing.T) {
 			obj, err := scheme.NewObject(typ)
 			require.NoError(t, err)
 
-			_, ok := obj.(*v1.Wget)
+			_, ok := obj.(*v2.Wget)
 			assert.True(t, ok)
 		})
 	}

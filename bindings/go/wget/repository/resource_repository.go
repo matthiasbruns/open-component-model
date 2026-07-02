@@ -10,8 +10,8 @@ import (
 	"ocm.software/open-component-model/bindings/go/repository"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/wget/access"
-	v1 "ocm.software/open-component-model/bindings/go/wget/access/spec/v1"
 	"ocm.software/open-component-model/bindings/go/wget/internal/download"
+	"ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
 )
 
 var wgetAccess = access.NewWgetAccess()

@@ -13,8 +13,8 @@ import (
 	"ocm.software/open-component-model/bindings/go/blob"
 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	"ocm.software/open-component-model/bindings/go/runtime"
-	v1 "ocm.software/open-component-model/bindings/go/wget/access/spec/v1"
 	"ocm.software/open-component-model/bindings/go/wget/repository"
+	"ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
 	credv1 "ocm.software/open-component-model/bindings/go/wget/spec/credentials/v1"
 )
 
