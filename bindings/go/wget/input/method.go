@@ -10,9 +10,10 @@ import (
 	httpclient "ocm.software/open-component-model/bindings/go/http"
 	httpv1alpha1 "ocm.software/open-component-model/bindings/go/http/spec/config/v1alpha1"
 	"ocm.software/open-component-model/bindings/go/runtime"
+	"ocm.software/open-component-model/bindings/go/wget/access"
 	"ocm.software/open-component-model/bindings/go/wget/internal/download"
 	"ocm.software/open-component-model/bindings/go/wget/repository"
-	"ocm.software/open-component-model/bindings/go/wget/spec/access"
+	input2 "ocm.software/open-component-model/bindings/go/wget/spec/input"
 	v1 "ocm.software/open-component-model/bindings/go/wget/spec/input/v1"
 )
 
@@ -36,7 +37,7 @@ type InputMethod struct {
 }
 
 func (i *InputMethod) GetInputMethodScheme() *runtime.Scheme {
-	return Scheme
+	return input2.Scheme
 }
 
 // GetResourceCredentialConsumerIdentity resolves the credential consumer identity for a
