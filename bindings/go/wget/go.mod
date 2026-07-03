@@ -9,6 +9,7 @@ require (
 	ocm.software/open-component-model/bindings/go/descriptor/runtime v0.0.0-20260709053926-1f1325412027
 	ocm.software/open-component-model/bindings/go/repository v0.0.10
 	ocm.software/open-component-model/bindings/go/runtime v0.0.8
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -23,5 +24,4 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	ocm.software/open-component-model/bindings/go/descriptor/v2 v2.0.3-alpha3 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )

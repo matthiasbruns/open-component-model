@@ -13,7 +13,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/wget/access"
 	"ocm.software/open-component-model/bindings/go/wget/internal/download"
 	"ocm.software/open-component-model/bindings/go/wget/repository"
-	input2 "ocm.software/open-component-model/bindings/go/wget/spec/input"
+	input "ocm.software/open-component-model/bindings/go/wget/spec/input"
 	v1 "ocm.software/open-component-model/bindings/go/wget/spec/input/v1"
 )
 
@@ -37,7 +37,7 @@ type InputMethod struct {
 }
 
 func (i *InputMethod) GetInputMethodScheme() *runtime.Scheme {
-	return input2.Scheme
+	return input.Scheme
 }
 
 // GetResourceCredentialConsumerIdentity resolves the credential consumer identity for a
@@ -49,17 +49,7 @@ func (i *InputMethod) GetResourceCredentialConsumerIdentity(_ context.Context, r
 		return nil, fmt.Errorf("error converting resource input spec: %w", err)
 	}
 
-	if wget.URL == "" {
-		return nil, fmt.Errorf("url is required in wget input spec")
-	}
-
-	identity, err := runtime.ParseURLToIdentity(wget.URL)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing wget URL to identity: %w", err)
-	}
-	identity.SetType(runtime.NewUnversionedType(access.WgetConsumerType))
-
-	return identity, nil
+	return access.CredentialConsumerIdentity(wget.URL)
 }
 
 // ProcessResource downloads the resource described by the wget input specification and

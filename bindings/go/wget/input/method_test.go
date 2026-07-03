@@ -14,6 +14,7 @@ import (
 	constructorruntime "ocm.software/open-component-model/bindings/go/constructor/runtime"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/wget/input"
+	accessspec "ocm.software/open-component-model/bindings/go/wget/spec/access"
 	credv1 "ocm.software/open-component-model/bindings/go/wget/spec/credentials/v1"
 	v1 "ocm.software/open-component-model/bindings/go/wget/spec/input/v1"
 )
@@ -174,7 +175,7 @@ func TestGetResourceCredentialConsumerIdentity(t *testing.T) {
 		identity, err := method.GetResourceCredentialConsumerIdentity(t.Context(), resource)
 		require.NoError(t, err)
 		require.NotNil(t, identity)
-		assert.Equal(t, "wget", identity.GetType().Name)
+		assert.Equal(t, accessspec.WgetConsumerType, identity.GetType().Name)
 		assert.Equal(t, "example.com", identity[runtime.IdentityAttributeHostname])
 	})
 

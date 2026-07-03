@@ -41,7 +41,6 @@ func (t *Wget) String() string {
 }
 
 const (
-	Version    = "v1"
-	Type       = "wget"
-	LegacyType = "Wget"
+	Type       = "Wget"
+	LegacyType = "wget"
 )
