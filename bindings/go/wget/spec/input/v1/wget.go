@@ -4,6 +4,11 @@ import (
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
+const (
+	Type       = "Wget"
+	LegacyType = "wget"
+)
+
 // Wget describes an input sourced by downloading a resource from an HTTP/S URL
 // during component construction. The downloaded content is stored as a local blob
 // in the component version.
@@ -39,8 +44,3 @@ type Wget struct {
 func (t *Wget) String() string {
 	return t.URL
 }
-
-const (
-	Type       = "Wget"
-	LegacyType = "wget"
-)

@@ -12,14 +12,14 @@ import (
 
 // Register wires the wget input method and its credential scheme into the CLI plugin registries.
 func Register(inputRegistry *input.RepositoryRegistry,
-	repositoryRegistry *credentialrepository.RepositoryRegistry,
+	credentialRepository *credentialrepository.RepositoryRegistry,
 	httpConfig *httpv1alpha1.Config,
 ) error {
 	method := &wgetinput.InputMethod{
 		HTTPConfig: httpConfig,
 	}
 
-	repositoryRegistry.Register(wgetcreds.Scheme)
+	credentialRepository.Register(wgetcreds.Scheme)
 
 	if err := inputRegistry.RegisterInternalResourceInputPlugin(method); err != nil {
 		return fmt.Errorf("could not register wget resource input method: %w", err)
