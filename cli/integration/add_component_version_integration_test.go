@@ -1,9 +1,11 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -329,6 +331,84 @@ components:
 				r.NoError(err, "should be able to retrieve the component version added with HTTPS URL")
 				r.Equal(componentName, desc.Component.Name)
 				r.Equal(componentVersion, desc.Component.Version)
+			})
+
+			t.Run("add and get component-version with wget input", func(t *testing.T) {
+				r := require.New(t)
+
+				content := []byte("hello from wget input")
+				fileSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/octet-stream")
+					_, _ = w.Write(content)
+				}))
+				t.Cleanup(fileSrv.Close)
+
+				wgetComponentName := "ocm.software/wget-input-component"
+				wgetComponentVersion := "v1.0.0"
+
+				constructorContent := fmt.Sprintf(`
+components:
+- name: %s
+  version: %s
+  provider:
+    name: ocm.software
+  resources:
+  - name: remote-blob
+    version: v1.0.0
+    type: blob
+    input:
+      type: wget
+      url: %s/artifact.bin
+      mediaType: application/octet-stream
+`, wgetComponentName, wgetComponentVersion, fileSrv.URL)
+
+				constructorPath := filepath.Join(t.TempDir(), "constructor.yaml")
+				r.NoError(os.WriteFile(constructorPath, []byte(constructorContent), os.ModePerm))
+
+				// add: the wget input downloads the resource and stores it as a local blob.
+				addCMD := cmd.New()
+				addCMD.SetArgs([]string{
+					"add",
+					"component-version",
+					"--repository", fmt.Sprintf("http://%s", registry.RegistryAddress),
+					"--constructor", constructorPath,
+					"--config", cfgPath,
+				})
+				r.NoError(addCMD.ExecuteContext(t.Context()), "add component-version should succeed with wget input")
+
+				// Verify the downloaded bytes were stored locally.
+				desc, err := repo.GetComponentVersion(t.Context(), wgetComponentName, wgetComponentVersion)
+				r.NoError(err)
+				r.Len(desc.Component.Resources, 1)
+				res := desc.Component.Resources[0]
+				r.Equal("remote-blob", res.Name)
+
+				blobData, _, err := repo.GetLocalResource(t.Context(), wgetComponentName, wgetComponentVersion, res.ToIdentity())
+				r.NoError(err)
+				rc, err := blobData.ReadCloser()
+				r.NoError(err)
+				defer func() { r.NoError(rc.Close()) }()
+				got, err := io.ReadAll(rc)
+				r.NoError(err)
+				r.Equal(content, got)
+
+				// get: read the wget-sourced component version back through the CLI.
+				output := new(bytes.Buffer)
+				getCMD := cmd.New()
+				getCMD.SetOut(output)
+				getCMD.SetArgs([]string{
+					"get",
+					"component-version",
+					fmt.Sprintf("http://%s//%s:%s", registry.RegistryAddress, wgetComponentName, wgetComponentVersion),
+					"--config", cfgPath,
+					"--output", "json",
+				})
+				r.NoError(getCMD.ExecuteContext(t.Context()), "get component-version should succeed for wget-sourced component")
+
+				out := output.String()
+				r.Contains(out, wgetComponentName, "output should contain the component name")
+				r.Contains(out, wgetComponentVersion, "output should contain the component version")
+				r.Contains(out, "remote-blob", "output should contain the wget-sourced resource")
 			})
 		})
 	}
