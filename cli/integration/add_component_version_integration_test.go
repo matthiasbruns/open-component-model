@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -409,6 +410,63 @@ components:
 				r.Contains(out, wgetComponentName, "output should contain the component name")
 				r.Contains(out, wgetComponentVersion, "output should contain the component version")
 				r.Contains(out, "remote-blob", "output should contain the wget-sourced resource")
+			})
+
+			t.Run("add component-version with wget input as access spec", func(t *testing.T) {
+				r := require.New(t)
+
+				var hits int32
+				fileSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					atomic.AddInt32(&hits, 1)
+					_, _ = w.Write([]byte("should not be fetched"))
+				}))
+				t.Cleanup(fileSrv.Close)
+
+				wgetComponentName := "ocm.software/wget-access-component"
+				wgetComponentVersion := "v1.0.0"
+
+				// asAccess stores a wget access pointing at the URL instead of downloading.
+				constructorContent := fmt.Sprintf(`
+components:
+- name: %s
+  version: %s
+  provider:
+    name: ocm.software
+  resources:
+  - name: remote-ref
+    version: v1.0.0
+    type: blob
+    input:
+      type: wget
+      url: %s/artifact.bin
+      mediaType: application/octet-stream
+      asAccess: true
+`, wgetComponentName, wgetComponentVersion, fileSrv.URL)
+
+				constructorPath := filepath.Join(t.TempDir(), "constructor.yaml")
+				r.NoError(os.WriteFile(constructorPath, []byte(constructorContent), os.ModePerm))
+
+				addCMD := cmd.New()
+				addCMD.SetArgs([]string{
+					"add",
+					"component-version",
+					"--repository", fmt.Sprintf("http://%s", registry.RegistryAddress),
+					"--constructor", constructorPath,
+					"--config", cfgPath,
+					"--skip-reference-digest-processing",
+				})
+				r.NoError(addCMD.ExecuteContext(t.Context()), "add component-version should succeed with wget access input")
+
+				// Access mode is a lazy reference: nothing is fetched from the URL at add time.
+				r.Zero(atomic.LoadInt32(&hits), "wget access input must not download the resource")
+
+				desc, err := repo.GetComponentVersion(t.Context(), wgetComponentName, wgetComponentVersion)
+				r.NoError(err)
+				r.Len(desc.Component.Resources, 1)
+				res := desc.Component.Resources[0]
+				r.Equal("remote-ref", res.Name)
+				r.NotNil(res.Access, "resource should carry an access spec, not a local blob")
+				r.Equal("Wget/v1", res.Access.GetType().String(), "resource should carry a wget access spec")
 			})
 		})
 	}
