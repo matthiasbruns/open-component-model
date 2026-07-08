@@ -7,8 +7,10 @@ import (
 	filesystemv1alpha1 "ocm.software/open-component-model/bindings/go/configuration/filesystem/v1alpha1/spec"
 	helmdigest "ocm.software/open-component-model/bindings/go/helm/digest"
 	helmresource "ocm.software/open-component-model/bindings/go/helm/repository/resource"
+	httpclient "ocm.software/open-component-model/bindings/go/http"
 	httpv1alpha1 "ocm.software/open-component-model/bindings/go/http/spec/config/v1alpha1"
 	"ocm.software/open-component-model/bindings/go/plugin/manager"
+	wgetrepository "ocm.software/open-component-model/bindings/go/wget/repository"
 	ocicredentialplugin "ocm.software/open-component-model/cli/internal/plugin/builtin/credentials/oci"
 	"ocm.software/open-component-model/cli/internal/plugin/builtin/gpg"
 	"ocm.software/open-component-model/cli/internal/plugin/builtin/input/dir"
@@ -53,6 +55,15 @@ func Register(manager *manager.PluginManager, filesystemConfig *filesystemv1alph
 	}
 	if err := wget.Register(manager.InputRegistry, manager.CredentialRepositoryRegistry, httpConfig); err != nil {
 		return fmt.Errorf("could not register wget input plugin: %w", err)
+	}
+	wgetResourceRepository := wgetrepository.NewResourceRepository(
+		wgetrepository.WithHTTPClient(httpclient.New(httpclient.WithConfig(httpConfig))),
+	)
+	if err := manager.ResourcePluginRegistry.RegisterInternalResourcePlugin(wgetResourceRepository); err != nil {
+		return fmt.Errorf("could not register wget resource repository plugin: %w", err)
+	}
+	if err := manager.DigestProcessorRegistry.RegisterInternalDigestProcessorPlugin(wgetResourceRepository); err != nil {
+		return fmt.Errorf("could not register wget digest processor plugin: %w", err)
 	}
 
 	if err := manager.DigestProcessorRegistry.RegisterInternalDigestProcessorPlugin(
