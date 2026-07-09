@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	nethttp "net/http"
+	"net/url"
 
 	"ocm.software/open-component-model/bindings/go/constructor"
 	constructorruntime "ocm.software/open-component-model/bindings/go/constructor/runtime"
@@ -44,6 +45,14 @@ func (i *InputMethod) GetResourceCredentialConsumerIdentity(_ context.Context, r
 
 	if wget.URL == "" {
 		return nil, fmt.Errorf("url is required")
+	}
+
+	parsed, err := url.Parse(wget.URL)
+	if err != nil {
+		return nil, fmt.Errorf("wget url is not a valid url: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("wget url must use http or https scheme, got %q", parsed.Scheme)
 	}
 
 	identity, err := runtime.ParseURLToIdentity(wget.URL)
