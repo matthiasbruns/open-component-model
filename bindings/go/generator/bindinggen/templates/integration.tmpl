@@ -1,0 +1,105 @@
+{{define "integration.go.mod" -}}
+module {{ .ModulePath }}/integration
+
+go {{ .GoVersion }}
+
+require {{ .ModulePath }} v0.0.0-00010101000000-000000000000
+
+replace {{ .ModulePath }} => ../
+{{end}}
+
+{{define "integration.Taskfile.yml" -}}
+version: '3'
+
+includes:
+  reuse: ../../../../reuse.Taskfile.yml
+
+vars:
+  INTEGRATION_TEST_IDENTIFIER: 'Integration'
+
+tasks:
+  test/integration:
+    cmds:
+      - task: reuse:run-go-test
+        vars:
+          GO_TEST_FLAGS: '-run "{{`{{ .INTEGRATION_TEST_IDENTIFIER }}`}}"'
+{{end}}
+
+{{define "integration_test.go" -}}
+{{if .Util -}}
+package integration_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	{{ .Package }} "{{ .ModulePath }}"
+)
+
+func Test_Integration_{{ .Package }}(t *testing.T) {
+	require.Equal(t, "{{ .Name }}", {{ .Package }}.Placeholder())
+	// TODO: replace with a real end-to-end integration test.
+}
+{{- else if .Access -}}
+package integration_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
+	"{{ .ModulePath }}/repository"
+	accessspec "{{ .ModulePath }}/spec/access"
+	accessv1 "{{ .ModulePath }}/spec/access/{{ .Version }}"
+)
+
+func Test_Integration_{{ .Spec }}(t *testing.T) {
+	repo := repository.NewResourceRepository()
+
+	spec := &accessv1.{{ .Spec }}{URL: "https://example.com/artifact"}
+	spec.Type = accessspec.V1VersionedType
+
+	resource := &descriptor.Resource{}
+	resource.Access = spec
+
+	identity, err := repo.GetResourceCredentialConsumerIdentity(context.Background(), resource)
+	require.NoError(t, err)
+	require.NotNil(t, identity)
+
+	// TODO: replace with a real end-to-end integration test using httptest.
+}
+{{- else -}}
+package integration_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	constructorruntime "ocm.software/open-component-model/bindings/go/constructor/runtime"
+	"{{ .ModulePath }}/input"
+	inputspec "{{ .ModulePath }}/spec/input"
+	inputv1 "{{ .ModulePath }}/spec/input/{{ .Version }}"
+)
+
+func Test_Integration_{{ .Spec }}(t *testing.T) {
+	method := &input.InputMethod{}
+
+	spec := &inputv1.{{ .Spec }}{URL: "https://example.com/artifact"}
+	spec.Type = inputspec.V1VersionedType
+
+	resource := &constructorruntime.Resource{}
+	resource.Input = spec
+
+	identity, err := method.GetResourceCredentialConsumerIdentity(context.Background(), resource)
+	require.NoError(t, err)
+	require.NotNil(t, identity)
+
+	// TODO: replace with a real end-to-end integration test using httptest.
+}
+{{- end}}
+{{end}}

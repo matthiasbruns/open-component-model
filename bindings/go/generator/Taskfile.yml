@@ -12,6 +12,20 @@ tasks:
       - task: jsonschemagen/test
       - task: reuse:run-go-test
 
+  bindinggen/run:
+    desc: "Scaffold a new binding. Pass args after --, e.g. task bindinggen/run -- access,input foo --spec Foo --credentials"
+    cmd: 'go run {{ .TASKFILE_DIR }}/bindinggen/cmd {{ .CLI_ARGS }}'
+
+  bindinggen/build:
+    desc: "Build the bindinggen binary into tmp ({{ .ROOT_DIR }}/tmp/bin)"
+    cmds:
+      - mkdir -p {{ .ROOT_DIR }}/tmp/bin
+      - go build -o {{ .ROOT_DIR }}/tmp/bin/bindinggen {{ .TASKFILE_DIR }}/bindinggen/cmd
+
+  bindinggen/test:
+    desc: "Run bindinggen tests"
+    cmd: 'go test {{ .TASKFILE_DIR }}/bindinggen/...'
+
   ocmtypegen/install:
     desc: "Install {{.PKG}} into tmp ({{ .ROOT_DIR }}/tmp/bin) if not already present"
     vars:

@@ -1,0 +1,72 @@
+{{define "scheme.go" -}}
+package {{ .Layer }}
+
+import (
+	"strings"
+
+	"ocm.software/open-component-model/bindings/go/runtime"
+	v1 "{{ .ModulePath }}/spec/{{ .Layer }}/{{ .Version }}"
+)
+
+const (
+	// {{ .Spec }}ConsumerType is the OCM type name for the {{ .Spec }} {{ .LayerNoun }}.
+	{{ .Spec }}ConsumerType = "{{ .ConsumerType }}"
+)
+
+var V1VersionedType = runtime.NewVersionedType({{ .Spec }}ConsumerType, v1.Version)
+
+var Scheme = runtime.NewScheme()
+
+func init() {
+	MustAddToScheme(Scheme)
+}
+
+func MustAddToScheme(scheme *runtime.Scheme) {
+	spec := &v1.{{ .Spec }}{}
+
+	lowerCaseConsumerType := strings.ToLower({{ .Spec }}ConsumerType)
+	scheme.MustRegisterWithAlias(spec,
+		V1VersionedType,
+		runtime.NewUnversionedType({{ .Spec }}ConsumerType),
+		runtime.NewVersionedType(lowerCaseConsumerType, v1.Version),
+		runtime.NewUnversionedType(lowerCaseConsumerType),
+	)
+}
+{{end}}
+
+{{define "group_version.go" -}}
+package {{ .Version }}
+
+const (
+	Version = "{{ .Version }}"
+)
+{{end}}
+
+{{define "spec.go" -}}
+package {{ .Version }}
+
+import (
+	"ocm.software/open-component-model/bindings/go/runtime"
+)
+
+// {{ .Spec }} is the {{ .LayerNoun }} specification for {{ .ConsumerType }} resources.
+//
+// TODO: replace the sample fields below with the real parameters.
+//
+// +k8s:deepcopy-gen:interfaces=ocm.software/open-component-model/bindings/go/runtime.Typed
+// +k8s:deepcopy-gen=true
+// +ocm:typegen=true
+// +ocm:jsonschema-gen=true
+type {{ .Spec }} struct {
+	// +ocm:jsonschema-gen:enum={{ .ConsumerType }}/{{ .Version }},{{ .LowerConsumerType }}/{{ .Version }}
+	// +ocm:jsonschema-gen:enum:deprecated={{ .ConsumerType }},{{ .LowerConsumerType }}
+	Type runtime.Type `json:"type"`
+
+	// URL is a sample field. Replace it with the real parameters.
+	URL string `json:"url"`
+}
+
+func (t *{{ .Spec }}) String() string {
+	return t.URL
+}
+{{end}}

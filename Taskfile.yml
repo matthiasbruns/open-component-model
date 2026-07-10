@@ -6,6 +6,22 @@ dotenv: ['.env', '.env.local']
 output: prefixed
 
 includes:
+  bindings/go/maven:
+    optional: true
+    taskfile: ./bindings/go/maven/Taskfile.yml
+    dir: ./bindings/go/maven
+  bindings/go/maven/integration:
+    optional: true
+    taskfile: ./bindings/go/maven/integration/Taskfile.yml
+    dir: ./bindings/go/maven/integration
+  bindings/go/s3:
+    optional: true
+    taskfile: ./bindings/go/s3/Taskfile.yml
+    dir: ./bindings/go/s3
+  bindings/go/s3/integration:
+    optional: true
+    taskfile: ./bindings/go/s3/integration/Taskfile.yml
+    dir: ./bindings/go/s3/integration
   tools:
     taskfile: ./tools.Taskfile.yml
   bindings/go/cel:
@@ -214,8 +230,8 @@ tasks:
     desc: "Run all Code Generators in the project"
     cmds:
       - task: 'bindings/go/generator:ocmtypegen/generate'
-      - task: 'bindings/go/generator:jsonschemagen/generate'
       - task: 'tools:deepcopy-gen/generate-deepcopy'
+      - task: 'bindings/go/generator:jsonschemagen/generate'
       - task: 'kubernetes/controller:manifests'
       - task: 'kubernetes/controller:generate'
       - task: 'cli:generate/docs'
