@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"ocm.software/open-component-model/cli/cmd"
-	"ocm.software/open-component-model/cli/integration/internal"
 )
 
 // Test_Integration_WgetCustomCA verifies, over a matrix of trusted/untrusted server
@@ -39,8 +38,8 @@ import (
 // This test must not run in parallel: it uses t.Setenv and relies on being the sole
 // HTTPS client in this test binary.
 func Test_Integration_WgetCustomCA(t *testing.T) {
-	trustedCA, trustedKey, trustedPEM := internal.NewCA(t)
-	untrustedCA, untrustedKey, _ := internal.NewCA(t)
+	trustedCA, trustedKey, trustedPEM := newCA(t)
+	untrustedCA, untrustedKey, _ := newCA(t)
 
 	// Trust only the "trusted" CA through OCM's documented custom-CA mechanism.
 	caFile := filepath.Join(t.TempDir(), "trusted-ca.pem")
@@ -72,14 +71,14 @@ func Test_Integration_WgetCustomCA(t *testing.T) {
 
 			r := require.New(t)
 
-			content := []byte(fmt.Sprintf("artifact for case %d", i))
-			srv := internal.NewTLSServerWithCert(t, internal.IssueServerCert(t, tc.serverCA, tc.serverKey), content)
+			content := fmt.Appendf(nil, "artifact for case %d", i)
+			srv := newTLSServer(t, issueServerCert(t, tc.serverCA, tc.serverKey), content)
 			r.True(strings.HasPrefix(srv.URL, "https://"), "test server must serve HTTPS")
 
 			name, version := fmt.Sprintf("ocm.software/wget-customca-%d", i), "v1.0.0"
 			tmp := t.TempDir()
 			constructorPath := filepath.Join(tmp, "constructor.yaml")
-			r.NoError(os.WriteFile(constructorPath, []byte(internal.WgetInputConstructor(name, version, srv.URL)), 0o600))
+			r.NoError(os.WriteFile(constructorPath, []byte(wgetConstructor(name, version, srv.URL)), 0o600))
 			archive := filepath.Join(tmp, "transport-archive")
 
 			// The wget input downloads the artifact over HTTPS at add time.
