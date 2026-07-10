@@ -210,15 +210,16 @@ func applyCredentials(ctx context.Context, req *http.Request, client **http.Clie
 		if t, ok := existing.Transport.(*http.Transport); ok && t != nil {
 			baseTransport = t.Clone()
 		} else {
-			baseTransport = &http.Transport{}
+			if t, ok = http.DefaultTransport.(*http.Transport); ok && t != nil {
+				baseTransport = t.Clone()
+			} else {
+				baseTransport = &http.Transport{}
+			}
 		}
 		baseTransport.TLSClientConfig = tlsCfg
-		cloned := &http.Client{
-			Timeout:       existing.Timeout,
-			Jar:           existing.Jar,
-			CheckRedirect: existing.CheckRedirect,
-			Transport:     baseTransport,
-		}
+
+		cloned := *client
+		cloned.Transport = baseTransport
 		*client = cloned
 	}
 
