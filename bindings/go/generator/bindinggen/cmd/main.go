@@ -1,8 +1,6 @@
 // Command bindinggen scaffolds a new binding under bindings/go in the canonical
-// repository layout and wires it into the root Taskfile.
-//
-// It writes only the hand-authored skeletons; run `task generate` afterwards to
-// produce the zz_generated.* files.
+// repository layout, wires it into the root Taskfile, and (unless disabled) runs
+// scoped code generation for the new module.
 package main
 
 import (
@@ -10,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -69,7 +68,7 @@ func newCommand() *cobra.Command {
 	fs.StringVar(&f.root, "root", "", "repository root (default: auto-discovered)")
 	fs.BoolVar(&f.wireTaskfile, "wire-taskfile", true, "insert include entries into the root Taskfile")
 	fs.BoolVar(&f.tidy, "tidy", true, "run `go mod tidy` in the new modules")
-	fs.BoolVar(&f.generate, "generate", true, "run `task generate` (code generation) after scaffolding")
+	fs.BoolVar(&f.generate, "generate", true, "run scoped code generation (ocmtypegen, deepcopy-gen, jsonschemagen) for the new binding after scaffolding")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print what would be generated without writing")
 
 	return cmd
@@ -112,6 +111,17 @@ func run(f *flags) error {
 	}
 	relDir = filepath.ToSlash(relDir)
 
+	// Wiring writes relDir as a root-Taskfile include key, so it must be a real
+	// in-tree binding path. Scaffolding outside the tree is allowed only without wiring.
+	if f.wireTaskfile {
+		if strings.HasPrefix(relDir, "..") {
+			return fmt.Errorf("output dir %s is outside the repository root %s; pass --wire-taskfile=false to scaffold outside the tree", outDir, root)
+		}
+		if !strings.HasPrefix(relDir, "bindings/go/") {
+			return fmt.Errorf("output dir %s is not under bindings/go; pass --wire-taskfile=false to scaffold elsewhere", relDir)
+		}
+	}
+
 	if f.dryRun {
 		return dryRun(b, relDir)
 	}
@@ -137,17 +147,21 @@ func run(f *flags) error {
 		}
 	}
 
-	if f.tidy {
+	// A util binding has no spec types, so there is nothing to generate. Codegen
+	// needs the module's dependencies resolved, so tidy first whenever either runs.
+	codegen := f.generate && !b.Util
+	if f.tidy || codegen {
 		tidyModule(outDir)
 		tidyModule(filepath.Join(outDir, "integration"))
 	}
 
 	generated := false
-	if f.generate {
-		if err := runGenerate(root); err != nil {
+	if codegen {
+		if err := runCodegen(root, outDir); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: code generation failed (run `task generate` manually): %v\n", err)
 		} else {
 			generated = true
+			tidyModule(outDir) // refresh go.sum after the generated files land
 		}
 	}
 
@@ -155,13 +169,52 @@ func run(f *flags) error {
 	return nil
 }
 
-// runGenerate runs the repository's code generation (`task generate`), which fills
-// in the zz_generated.* files for the new spec types. The root `generate` task runs
-// deepcopy-gen before jsonschemagen, so it succeeds for brand-new types.
-func runGenerate(root string) error {
-	fmt.Println("\nRunning code generation (task generate)...")
-	cmd := exec.Command("task", "generate")
-	cmd.Dir = root
+// runCodegen generates the zz_generated.* files for just the new binding, in the
+// required order (ocmtypegen -> deepcopy-gen -> jsonschemagen), rather than the
+// repo-wide `task generate` which would also regenerate unrelated CLI docs and CRD
+// manifests and tidy every module.
+func runCodegen(root, bindingDir string) error {
+	generatorDir := filepath.Join(root, "bindings", "go", "generator")
+	fmt.Println("\nGenerating code for the new binding...")
+
+	if err := execStream(generatorDir, "go", "run", "./ocmtypegen", bindingDir); err != nil {
+		return fmt.Errorf("ocmtypegen: %w", err)
+	}
+	deepcopy, err := deepcopyGenBinary(root)
+	if err != nil {
+		return err
+	}
+	if err := execStream(bindingDir, deepcopy, "--output-file", "zz_generated.deepcopy.go", "./..."); err != nil {
+		return fmt.Errorf("deepcopy-gen: %w", err)
+	}
+	if err := execStream(generatorDir, "go", "run", "./jsonschemagen/cmd", bindingDir); err != nil {
+		return fmt.Errorf("jsonschemagen: %w", err)
+	}
+	return nil
+}
+
+// deepcopyGenBinary returns the path to the newest installed deepcopy-gen binary,
+// installing it via the tools Taskfile if none is present.
+func deepcopyGenBinary(root string) (string, error) {
+	glob := filepath.Join(root, "tmp", "bin", "deepcopy-gen-*")
+	matches, _ := filepath.Glob(glob)
+	if len(matches) == 0 {
+		if err := execStream(root, "task", "tools:deepcopy-gen/install"); err != nil {
+			return "", fmt.Errorf("installing deepcopy-gen: %w", err)
+		}
+		matches, _ = filepath.Glob(glob)
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("deepcopy-gen binary not found under %s", glob)
+	}
+	sort.Strings(matches)
+	return matches[len(matches)-1], nil
+}
+
+// execStream runs a command in dir, streaming its output to the user.
+func execStream(dir, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

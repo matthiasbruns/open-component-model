@@ -109,6 +109,30 @@ func TestNewBinding_SpecUpperCamelCase(t *testing.T) {
 	assert.Equal(t, "S3", b.Spec)
 }
 
+func TestNewBinding_NameValidation(t *testing.T) {
+	// Names must be clean lower-case identifiers; keywords and dirty names rejected.
+	for _, n := range []string{"S3", "Foo", "my-thing", "my_thing", "a.b", "foo bar", "1abc", "func", "type", "range", "map", ""} {
+		_, err := NewBinding(Options{Name: n, Kinds: []Kind{KindUtil}})
+		require.Error(t, err, "name %q must be rejected", n)
+	}
+	for _, n := range []string{"s3", "wget", "maven", "oci", "helm"} {
+		_, err := NewBinding(Options{Name: n, Kinds: []Kind{KindUtil}})
+		require.NoError(t, err, "name %q should be valid", n)
+	}
+}
+
+func TestNewBinding_VersionValidation(t *testing.T) {
+	for _, v := range []string{"v1", "v2", "v1alpha1", "v2beta3"} {
+		b, err := NewBinding(Options{Name: "x", Version: v, Kinds: []Kind{KindAccess}})
+		require.NoError(t, err, "version %q", v)
+		assert.Equal(t, v, b.Version)
+	}
+	for _, v := range []string{"1", "v", "v0", "v1.2", "valpha", "V1", "v1alpha", "alpha1"} {
+		_, err := NewBinding(Options{Name: "x", Version: v, Kinds: []Kind{KindAccess}})
+		require.Error(t, err, "version %q must be rejected", v)
+	}
+}
+
 func TestPatchRootTaskfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "Taskfile.yml")

@@ -11,8 +11,10 @@ import (
 // existing formatting and comments. relDir is the binding directory relative to the
 // repository root, e.g. "bindings/go/wget".
 //
-// It is idempotent: an include whose key already exists is left untouched. It
-// returns whether the file was changed.
+// The block is not maintained in sorted order, so entries are placed before the
+// first existing key that sorts after relDir (see insertionIndex) rather than in a
+// globally sorted position. It is idempotent: an include whose key already exists is
+// left untouched. It returns whether the file was changed.
 func PatchRootTaskfile(taskfilePath, relDir string) (bool, error) {
 	data, err := os.ReadFile(taskfilePath)
 	if err != nil {
@@ -108,7 +110,9 @@ func existingIncludeKeys(lines []string, start, end int) map[string]bool {
 }
 
 // insertionIndex returns the line index at which a new include for newKey should be
-// spliced so keys stay in ascending order. It falls back to the end of the block.
+// spliced: before the first existing key that sorts after newKey. Because the block
+// is not kept sorted, this is a "near" position, not a globally sorted one. It falls
+// back to the end of the block.
 func insertionIndex(lines []string, start, end int, newKey string) int {
 	for i := start; i < end; i++ {
 		if key, ok := isEntryKeyLine(lines[i]); ok {

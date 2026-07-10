@@ -5,14 +5,20 @@
 // root Taskfile includes).
 //
 // It only writes the hand-authored skeletons. The generated files (zz_generated.*)
-// are produced afterwards by `task generate` (ocmtypegen + jsonschemagen).
+// are produced afterwards by code generation (ocmtypegen, deepcopy-gen,
+// jsonschemagen), which the CLI runs scoped to the new module by default.
 package bindinggen
 
 import (
 	"fmt"
+	"go/token"
+	"regexp"
 	"strings"
 	"unicode"
 )
+
+// versionPattern matches Kubernetes-style API versions: v1, v2, v1alpha1, v2beta3.
+var versionPattern = regexp.MustCompile(`^v[1-9][0-9]*((alpha|beta)[1-9][0-9]*)?$`)
 
 // Kind is a facet of a binding to scaffold. A binding is either a plain utility
 // library (KindUtil) or a spec-based binding exposing an access type, an input
@@ -83,13 +89,26 @@ func NewBinding(opts Options) (*Binding, error) {
 	}
 	pkg := sanitizePackage(name)
 	if pkg == "" {
-		return nil, fmt.Errorf("name %q does not yield a valid go package identifier", name)
+		return nil, fmt.Errorf("name %q is not a valid identifier", name)
+	}
+	// The binding name is the directory, module path and package, so it must already
+	// be a clean lower-case identifier — reject anything sanitizing would change.
+	if pkg != name {
+		return nil, fmt.Errorf("name %q must be a lower-case alphanumeric identifier starting with a letter (e.g. %q)", name, pkg)
+	}
+	if token.IsKeyword(pkg) {
+		return nil, fmt.Errorf("name %q is a Go keyword; choose another", name)
+	}
+
+	version := firstNonEmpty(strings.TrimSpace(opts.Version), "v1")
+	if !versionPattern.MatchString(version) {
+		return nil, fmt.Errorf("version %q must look like v1, v2, v1alpha1 or v2beta3", version)
 	}
 
 	b := &Binding{
 		Name:         name,
 		Package:      pkg,
-		Version:      firstNonEmpty(strings.TrimSpace(opts.Version), "v1"),
+		Version:      version,
 		ModulePrefix: firstNonEmpty(strings.TrimSpace(opts.ModulePrefix), DefaultModulePrefix),
 		GoVersion:    firstNonEmpty(strings.TrimSpace(opts.GoVersion), DefaultGoVersion),
 		Credentials:  opts.Credentials,
