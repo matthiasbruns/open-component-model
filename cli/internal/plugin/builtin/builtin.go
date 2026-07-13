@@ -18,6 +18,7 @@ import (
 	ociplugin "ocm.software/open-component-model/cli/internal/plugin/builtin/oci"
 	"ocm.software/open-component-model/cli/internal/plugin/builtin/oidc"
 	"ocm.software/open-component-model/cli/internal/plugin/builtin/rsa"
+	"ocm.software/open-component-model/cli/internal/plugin/builtin/s3"
 	"ocm.software/open-component-model/cli/internal/plugin/builtin/wget"
 )
 
@@ -58,6 +59,12 @@ func Register(manager *manager.PluginManager, filesystemConfig *filesystemv1alph
 		manager.CredentialRepositoryRegistry,
 		httpConfig); err != nil {
 		return fmt.Errorf("could not register wget inbuilt plugin: %w", err)
+	}
+
+	if err := s3.Register(manager.ResourcePluginRegistry,
+		manager.DigestProcessorRegistry,
+		manager.CredentialRepositoryRegistry); err != nil {
+		return fmt.Errorf("could not register s3 inbuilt plugin: %w", err)
 	}
 
 	if err := manager.DigestProcessorRegistry.RegisterInternalDigestProcessorPlugin(

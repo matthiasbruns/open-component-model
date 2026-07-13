@@ -1,0 +1,24 @@
+{{define "doc.go" -}}
+// Package {{ .Package }} implements the {{ if .Util }}{{ .Package }} utility binding{{ else }}"{{ .ConsumerType }}" {{ if and .Access .Input }}access type and input method{{ else if .Access }}access type{{ else }}input method{{ end }}{{ end }} for the Open Component Model.
+//
+// TODO: expand this package documentation.
+package {{ .Package }}
+{{end}}
+
+{{define "go.mod" -}}
+module {{ .ModulePath }}
+
+go {{ .GoVersion }}
+{{end}}
+
+{{define "Taskfile.yml" -}}
+version: '3'
+
+includes:
+  reuse: ../../../reuse.Taskfile.yml
+
+tasks:
+  test:
+    cmds:
+      - task: reuse:run-go-test
+{{end}}

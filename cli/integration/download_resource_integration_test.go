@@ -773,3 +773,92 @@ func getRepoRootBasedOnGit(t *testing.T) string {
 	r.NoError(err, "git rev-parse --show-toplevel must succeed to get repository root")
 	return strings.TrimSpace(string(rootRaw))
 }
+
+// Test_Integration_S3Access_Download adds a component version whose resource declares an S3
+// access (pointing at a MinIO container) and verifies `download resource` resolves and fetches
+// the object through the registered S3 resource repository plugin.
+func Test_Integration_S3Access_Download(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx := t.Context()
+
+	m := internal.CreateMinIO(t)
+	const bucket, key = "download-bucket", "path/to/blob.bin"
+	content := []byte("s3 access download content")
+	m.CreateBucket(t, bucket)
+	m.PutObject(t, bucket, key, content)
+
+	cfg := fmt.Sprintf(`
+type: generic.config.ocm.software/v1
+configurations:
+- type: credentials.config.ocm.software
+  consumers:
+  - identity:
+      type: S3
+      hostname: %[1]q
+      port: %[2]q
+      scheme: http
+    credentials:
+    - type: Credentials/v1
+      properties:
+        accessKeyId: %[3]q
+        secretAccessKey: %[4]q
+`, m.Host, m.Port, m.User, m.Password)
+	cfgPath := filepath.Join(t.TempDir(), "ocmconfig.yaml")
+	r.NoError(os.WriteFile(cfgPath, []byte(cfg), os.ModePerm))
+
+	const componentName = "ocm.software/s3-download-component"
+	const componentVersion = "v1.0.0"
+
+	constructorContent := fmt.Sprintf(`
+components:
+- name: %s
+  version: %s
+  provider:
+    name: ocm.software
+  resources:
+  - name: s3-blob
+    version: v1.0.0
+    type: blob
+    access:
+      type: S3/v1
+      bucketName: %s
+      objectKey: %s
+      endpoint: %s
+      usePathStyle: true
+      region: us-east-1
+`, componentName, componentVersion, bucket, key, m.Endpoint)
+	constructorPath := filepath.Join(t.TempDir(), "constructor.yaml")
+	r.NoError(os.WriteFile(constructorPath, []byte(constructorContent), os.ModePerm))
+
+	ctfDir := filepath.Join(t.TempDir(), "ctf")
+	addCMD := cmd.New()
+	addCMD.SetArgs([]string{
+		"add", "component-version",
+		"--repository", fmt.Sprintf("ctf::%s", ctfDir),
+		"--constructor", constructorPath,
+		"--config", cfgPath,
+	})
+	r.NoError(addCMD.ExecuteContext(ctx), "add cv with S3 access should succeed")
+
+	// download resource resolves the S3 access via the registered S3 resource repository.
+	output := filepath.Join(t.TempDir(), "downloaded")
+	downloadCMD := cmd.New()
+	downloadCMD.SetArgs([]string{
+		"download", "resource",
+		fmt.Sprintf("ctf::%s//%s:%s", ctfDir, componentName, componentVersion),
+		"--identity", "name=s3-blob,version=v1.0.0",
+		"--output", output,
+		"--config", cfgPath,
+	})
+	r.NoError(downloadCMD.ExecuteContext(ctx), "download resource should resolve the S3 access")
+
+	outputBlob, err := filesystem.GetBlobFromOSPath(output)
+	r.NoError(err)
+	dataStream, err := outputBlob.ReadCloser()
+	r.NoError(err)
+	t.Cleanup(func() { r.NoError(dataStream.Close()) })
+	data, err := io.ReadAll(dataStream)
+	r.NoError(err)
+	r.Equal(content, data, "downloaded content should match the S3 object")
+}

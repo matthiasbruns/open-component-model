@@ -1,0 +1,97 @@
+{{define "method.go" -}}
+package input
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+
+	"ocm.software/open-component-model/bindings/go/constructor"
+	constructorruntime "ocm.software/open-component-model/bindings/go/constructor/runtime"
+	"ocm.software/open-component-model/bindings/go/runtime"
+	"{{ .ModulePath }}/spec/input"
+	v1 "{{ .ModulePath }}/spec/input/{{ .Version }}"
+)
+
+var _ constructor.ResourceInputMethod = (*InputMethod)(nil)
+
+// InputMethod implements the [constructor.ResourceInputMethod] interface for {{ .Spec }} inputs.
+type InputMethod struct{}
+
+func (i *InputMethod) GetInputMethodScheme() *runtime.Scheme {
+	return input.Scheme
+}
+
+// GetResourceCredentialConsumerIdentity resolves the credential consumer identity for a
+// {{ .Spec }} input from its URL.
+func (i *InputMethod) GetResourceCredentialConsumerIdentity(_ context.Context, resource *constructorruntime.Resource) (runtime.Identity, error) {
+	spec := v1.{{ .Spec }}{}
+	if err := i.GetInputMethodScheme().Convert(resource.Input, &spec); err != nil {
+		return nil, fmt.Errorf("error converting resource input spec: %w", err)
+	}
+
+	if spec.URL == "" {
+		return nil, fmt.Errorf("url is required")
+	}
+
+	if _, err := url.Parse(spec.URL); err != nil {
+		return nil, fmt.Errorf("{{ .Package }} url is not a valid url: %w", err)
+	}
+
+	identity, err := runtime.ParseURLToIdentity(spec.URL)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing {{ .Package }} URL to identity: %w", err)
+	}
+
+	identity.SetType(runtime.NewUnversionedType(input.{{ .Spec }}ConsumerType))
+
+	return identity, nil
+}
+
+// ProcessResource processes the {{ .Spec }} input and returns it as local blob data.
+//
+// TODO: implement the actual input processing.
+func (i *InputMethod) ProcessResource(ctx context.Context, resource *constructorruntime.Resource, credentials runtime.Typed) (*constructor.ResourceInputMethodResult, error) {
+	spec := v1.{{ .Spec }}{}
+	if err := i.GetInputMethodScheme().Convert(resource.Input, &spec); err != nil {
+		return nil, fmt.Errorf("error converting resource input spec: %w", err)
+	}
+
+	if spec.URL == "" {
+		return nil, fmt.Errorf("url is required in {{ .Package }} input spec")
+	}
+
+	return nil, fmt.Errorf("ProcessResource is not implemented for the {{ .Spec }} input method")
+}
+{{end}}
+
+{{define "method_test.go" -}}
+package input
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	constructorruntime "ocm.software/open-component-model/bindings/go/constructor/runtime"
+	inputspec "{{ .ModulePath }}/spec/input"
+	v1 "{{ .ModulePath }}/spec/input/{{ .Version }}"
+)
+
+func Test_GetResourceCredentialConsumerIdentity(t *testing.T) {
+	method := &InputMethod{}
+
+	spec := &v1.{{ .Spec }}{URL: "https://example.com/artifact"}
+	spec.Type = inputspec.V1VersionedType
+
+	resource := &constructorruntime.Resource{}
+	resource.Input = spec
+
+	identity, err := method.GetResourceCredentialConsumerIdentity(context.Background(), resource)
+	require.NoError(t, err)
+	require.NotNil(t, identity)
+
+	// TODO: add cases covering ProcessResource once implemented.
+}
+{{end}}

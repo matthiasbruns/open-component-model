@@ -931,3 +931,109 @@ components:
 	r.Contains(out, "remote-blob", "output should contain the resource")
 	r.Contains(out, "wget/v1", "output should contain the wget access type")
 }
+
+// Test_Integration_AddComponentVersion_S3Access verifies that a resource declaring an S3 access
+// directly in the constructor can be added to a CTF and that the access is resolved and digested
+// via the S3 resource repository plugin, downloading the object from a MinIO container at add time.
+func Test_Integration_AddComponentVersion_S3Access(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx := t.Context()
+
+	m := internal.CreateMinIO(t)
+	const bucket, key = "artifacts", "blobs/data.bin"
+	content := []byte("hello from s3 access")
+	m.CreateBucket(t, bucket)
+	m.PutObject(t, bucket, key, content)
+
+	cfg := fmt.Sprintf(`
+type: generic.config.ocm.software/v1
+configurations:
+- type: credentials.config.ocm.software
+  consumers:
+  - identity:
+      type: S3
+      hostname: %[1]q
+      port: %[2]q
+      scheme: http
+    credentials:
+    - type: Credentials/v1
+      properties:
+        accessKeyId: %[3]q
+        secretAccessKey: %[4]q
+`, m.Host, m.Port, m.User, m.Password)
+	cfgPath := filepath.Join(t.TempDir(), "ocmconfig.yaml")
+	r.NoError(os.WriteFile(cfgPath, []byte(cfg), os.ModePerm))
+
+	const componentName = "ocm.software/s3-access-component"
+	const componentVersion = "v1.0.0"
+
+	// The resource declares an S3 access directly, not an input method.
+	constructorContent := fmt.Sprintf(`
+components:
+- name: %s
+  version: %s
+  provider:
+    name: ocm.software
+  resources:
+  - name: s3-blob
+    version: v1.0.0
+    type: blob
+    access:
+      type: S3/v1
+      bucketName: %s
+      objectKey: %s
+      endpoint: %s
+      usePathStyle: true
+      region: us-east-1
+`, componentName, componentVersion, bucket, key, m.Endpoint)
+	constructorPath := filepath.Join(t.TempDir(), "constructor.yaml")
+	r.NoError(os.WriteFile(constructorPath, []byte(constructorContent), os.ModePerm))
+
+	ctfDir := filepath.Join(t.TempDir(), "ctf")
+	addCMD := cmd.New()
+	addCMD.SetArgs([]string{
+		"add", "component-version",
+		"--repository", fmt.Sprintf("ctf::%s", ctfDir),
+		"--constructor", constructorPath,
+		"--config", cfgPath,
+	})
+	addCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	r.NoError(addCMD.ExecuteContext(addCtx), "add cv with S3 access should succeed")
+
+	// Open the CTF and verify the resource kept its S3 access and got a digest via the S3 digest processor.
+	fs, err := filesystem.NewFS(ctfDir, os.O_RDONLY)
+	r.NoError(err)
+	repo, err := oci.NewRepository(ocictf.WithCTF(ocictf.NewFromCTF(ctf.NewFileSystemCTF(fs))))
+	r.NoError(err)
+
+	desc, err := repo.GetComponentVersion(ctx, componentName, componentVersion)
+	r.NoError(err)
+	r.Len(desc.Component.Resources, 1)
+	res := desc.Component.Resources[0]
+	r.Equal("s3-blob", res.Name)
+	r.NotNil(res.Access, "resource should carry an S3 access spec")
+	r.Equal("S3/v1", res.Access.GetType().String())
+	r.NotNil(res.Digest, "s3 digest processor should have set a digest")
+	r.Equal("SHA-256", res.Digest.HashAlgorithm)
+	r.Equal("genericBlobDigest/v1", res.Digest.NormalisationAlgorithm)
+	r.Equal(godigest.FromBytes(content).Encoded(), res.Digest.Value,
+		"digest value must be the SHA-256 of the S3 object content")
+
+	// get component-version reads the S3-access component back through the CLI.
+	getOutput := new(bytes.Buffer)
+	getCMD := cmd.New()
+	getCMD.SetOut(getOutput)
+	getCMD.SetArgs([]string{
+		"get", "component-version",
+		fmt.Sprintf("ctf::%s//%s:%s", ctfDir, componentName, componentVersion),
+		"--output", "json",
+	})
+	r.NoError(getCMD.ExecuteContext(ctx), "get component-version should succeed for the S3-access component")
+
+	out := getOutput.String()
+	r.Contains(out, componentName, "output should contain the component name")
+	r.Contains(out, "s3-blob", "output should contain the resource")
+	r.Contains(out, "S3/v1", "output should contain the S3 access type")
+}

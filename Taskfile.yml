@@ -6,6 +6,14 @@ dotenv: ['.env', '.env.local']
 output: prefixed
 
 includes:
+  bindings/go/s3:
+    optional: true
+    taskfile: ./bindings/go/s3/Taskfile.yml
+    dir: ./bindings/go/s3
+  bindings/go/s3/integration:
+    optional: true
+    taskfile: ./bindings/go/s3/integration/Taskfile.yml
+    dir: ./bindings/go/s3/integration
   tools:
     taskfile: ./tools.Taskfile.yml
   bindings/go/cel:

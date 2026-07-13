@@ -1,0 +1,25 @@
+{{define "util.go" -}}
+package {{ .Package }}
+
+// Placeholder is a scaffolded stub. Replace it with the real API of this utility
+// binding.
+//
+// TODO: implement {{ .Name }}.
+func Placeholder() string {
+	return "{{ .Name }}"
+}
+{{end}}
+
+{{define "util_test.go" -}}
+package {{ .Package }}
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func Test_{{ .Package }}_Placeholder(t *testing.T) {
+	assert.Equal(t, "{{ .Name }}", Placeholder())
+}
+{{end}}

@@ -8,6 +8,8 @@ require (
 	ocm.software/open-component-model/bindings/go/runtime v0.0.8
 )
 
+require github.com/rogpeppe/go-internal v1.15.0 // indirect
+
 require (
 	github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
