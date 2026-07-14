@@ -91,10 +91,10 @@ func (cfg *Config) Validate() error {
 			cfg.CopyMode, CopyModeLocalBlobResources, CopyModeAllResources)
 	}
 	switch cfg.UploadType {
-	case "", UploadAsDefault, UploadAsLocalBlob, UploadAsOciArtifact:
+	case "", UploadAsDefault, UploadAsLocalBlob, UploadAsOciArtifact, UploadAsS3:
 	default:
-		return fmt.Errorf("invalid uploadType %q (must be one of %q, %q, %q)",
-			cfg.UploadType, UploadAsDefault, UploadAsLocalBlob, UploadAsOciArtifact)
+		return fmt.Errorf("invalid uploadType %q (must be one of %q, %q, %q, %q)",
+			cfg.UploadType, UploadAsDefault, UploadAsLocalBlob, UploadAsOciArtifact, UploadAsS3)
 	}
 	return nil
 }

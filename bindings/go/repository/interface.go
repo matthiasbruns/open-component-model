@@ -161,6 +161,28 @@ type ResourceDigestProcessor interface {
 	ProcessResourceDigest(ctx context.Context, res *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error)
 }
 
+// Coordinator converts between a technology-specific access spec and the
+// technology-independent [descriptor.Coordinate], which is the shared coordinate
+// system used to move resources across storage technologies.
+//
+// It is an optional capability: an implementation is registered per technology, and
+// the domain knowledge of how a coordinate maps to that technology lives in the
+// implementation, not in a central switch. Producing a coordinate from a source
+// access (ToCoordinate) and consuming a coordinate into a target access
+// (FromCoordinate) are the only two operations, which turns the cross-technology
+// mapping from an N*M problem into N+M: each technology implements this once.
+//
+// A FromCoordinate implementation is configured with its own target location (bucket,
+// registry base, prefix) at construction time; the Coordinate carries only the
+// technology-independent identity, never environment-specific placement.
+type Coordinator interface {
+	// ToCoordinate reduces a source access spec to the neutral coordinate.
+	ToCoordinate(spec runtime.Typed) (*descriptor.Coordinate, error)
+	// FromCoordinate expands the neutral coordinate into a concrete target access spec
+	// for this technology, using the implementation's configured target location.
+	FromCoordinate(coord *descriptor.Coordinate) (runtime.Typed, error)
+}
+
 // HealthCheckable is an optional interface that can be implemented by a
 // component version repository.
 type HealthCheckable interface {

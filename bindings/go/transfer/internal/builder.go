@@ -11,6 +11,9 @@ import (
 	ocitransformer "ocm.software/open-component-model/bindings/go/oci/transformer"
 	"ocm.software/open-component-model/bindings/go/repository"
 	"ocm.software/open-component-model/bindings/go/runtime"
+	s3access "ocm.software/open-component-model/bindings/go/s3/spec/access"
+	s3v1alpha1 "ocm.software/open-component-model/bindings/go/s3/spec/transformation/v1alpha1"
+	s3transformer "ocm.software/open-component-model/bindings/go/s3/transformation"
 	"ocm.software/open-component-model/bindings/go/transform/graph/builder"
 )
 
@@ -26,6 +29,8 @@ func NewDefaultBuilder(
 	transformerScheme.MustRegisterScheme(ociv1alpha1.Scheme)
 	transformerScheme.MustRegisterScheme(ociaccess.Scheme)
 	transformerScheme.MustRegisterScheme(helmv1alpha1.Scheme)
+	transformerScheme.MustRegisterScheme(s3v1alpha1.Scheme)
+	transformerScheme.MustRegisterScheme(s3access.Scheme)
 
 	ociGet := &ocitransformer.GetComponentVersion{
 		Scheme:             transformerScheme,
@@ -82,6 +87,18 @@ func NewDefaultBuilder(
 		CredentialProvider: credentialProvider,
 	}
 
+	// S3 transformers: download (dispatched by access type) and upload.
+	s3Get := &s3transformer.GetS3Resource{
+		Scheme:             transformerScheme,
+		Repository:         resourceRepo,
+		CredentialProvider: credentialProvider,
+	}
+	s3Add := &s3transformer.AddS3Resource{
+		Scheme:             transformerScheme,
+		Repository:         resourceRepo,
+		CredentialProvider: credentialProvider,
+	}
+
 	// Helm transformers
 	getHelmChart := &helmtransformer.GetHelmChart{
 		Scheme:             transformerScheme,
@@ -110,6 +127,8 @@ func NewDefaultBuilder(
 		WithTransformer(&ociv1alpha1.GetOCIArtifact{}, ociGetOCIArtifact).
 		WithTransformer(&ociv1alpha1.AddOCIArtifact{}, ociAddOCIArtifact).
 		WithTransformer(&ociv1alpha1.TransferOCIArtifact{}, ociTransferOCIArtifact).
+		WithTransformer(&s3v1alpha1.GetS3Resource{}, s3Get).
+		WithTransformer(&s3v1alpha1.AddS3Resource{}, s3Add).
 		WithTransformer(&helmv1alpha1.GetHelmChart{}, getHelmChart).
 		WithTransformer(&helmv1alpha1.ConvertHelmToOCI{}, convertHelmToOCI).
 		WithTransformer(&FileCleanupTransformation{}, fileCleanup)

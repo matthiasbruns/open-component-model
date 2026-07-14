@@ -7,6 +7,7 @@ import (
 	ocispecv1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"ocm.software/open-component-model/bindings/go/oci/looseref"
+	"ocm.software/open-component-model/bindings/go/oci/spec/layout"
 	ctfv1 "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/ctf"
 	"ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/oci"
 	ociv1alpha1 "ocm.software/open-component-model/bindings/go/oci/spec/transformation/v1alpha1"
@@ -157,4 +158,17 @@ func isOCICompliantManifest(mediaType string) bool {
 	default:
 		return false
 	}
+}
+
+// isOCIImageLayout reports whether the media type is an OCI image layout tar, i.e. a full artifact
+// buffered as a blob. Such a localBlob can be restored to an OCI registry via uploadOCIImage, which
+// reads the blob with tar.ReadOCILayout.
+func isOCIImageLayout(mediaType string) bool {
+	return mediaType == layout.MediaTypeOCIImageLayoutTarV1
+}
+
+// isOCIRestorable reports whether a localBlob with the given media type can be re-homed to an OCI
+// registry (either a bare manifest or a full image-layout tar).
+func isOCIRestorable(mediaType string) bool {
+	return isOCICompliantManifest(mediaType) || isOCIImageLayout(mediaType)
 }

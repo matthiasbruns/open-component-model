@@ -126,9 +126,48 @@ func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *des
 	}, opts...)
 }
 
-// UploadResource is not yet supported for the S3 access type (download-first, matching ocmv1).
+// UploadResource uploads the given content to the S3 location described by the resource's target
+// access and returns a copy of the resource whose access is updated with the final object version
+// (pinned when the bucket is versioned) so the reference is reproducible.
 func (r *ResourceRepository) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
-	return nil, fmt.Errorf("upload is not supported for the S3 access type")
+	if res == nil {
+		return nil, fmt.Errorf("resource is required")
+	}
+	if res.Access == nil {
+		return nil, fmt.Errorf("resource access is required")
+	}
+
+	spec := v1.S3{}
+	if err := accessspec.Scheme.Convert(res.Access, &spec); err != nil {
+		return nil, fmt.Errorf("error converting resource access spec: %w", err)
+	}
+
+	rc, err := content.ReadCloser()
+	if err != nil {
+		return nil, fmt.Errorf("error opening resource content: %w", err)
+	}
+	defer func() { _ = rc.Close() }()
+
+	result, err := download.Upload(ctx, download.UploadRequest{
+		Region:                spec.Region,
+		BucketName:            spec.BucketName,
+		ObjectKey:             spec.ObjectKey,
+		Endpoint:              spec.Endpoint,
+		UsePathStyle:          spec.UsePathStyle,
+		InsecureSkipTLSVerify: spec.InsecureSkipTLSVerify,
+	}, rc, credentials)
+	if err != nil {
+		return nil, err
+	}
+
+	updated := res.DeepCopy()
+	uploaded := spec
+	if result.VersionID != "" {
+		uploaded.Version = result.VersionID
+	}
+	updated.Access = &uploaded
+
+	return updated, nil
 }
 
 // GetResourceDigestProcessorCredentialConsumerIdentity resolves the credential consumer

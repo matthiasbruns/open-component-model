@@ -15,6 +15,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/oci"
 	"ocm.software/open-component-model/bindings/go/repository/component/resolvers"
 	"ocm.software/open-component-model/bindings/go/runtime"
+	s3accessv1 "ocm.software/open-component-model/bindings/go/s3/spec/access/v1"
 	transferv1alpha1 "ocm.software/open-component-model/bindings/go/transfer/v1alpha1/spec"
 	transformv1alpha1 "ocm.software/open-component-model/bindings/go/transform/spec/v1alpha1"
 	"ocm.software/open-component-model/bindings/go/transform/spec/v1alpha1/meta"
@@ -69,7 +70,9 @@ func BuildGraphDefinition(
 	ctx context.Context,
 	roots map[string]TransferRoot,
 	cfg transferv1alpha1.Config,
+	opts ...BuildOption,
 ) (*transformv1alpha1.TransformationGraphDefinition, error) {
+	o := newGraphOptions(opts...)
 	// Seed the targetMap and resolverMap from explicit roots.
 	// These maps are shared with the discoverer and multiResolver:
 	// - targetMap: component key → list of target repository specs
@@ -135,7 +138,7 @@ func BuildGraphDefinition(
 	// Phase 2: walk the discovered DAG and generate transformation nodes per (component, target) pair.
 	g := dr.Graph()
 	err := g.WithReadLock(func(d *dag.DirectedAcyclicGraph[string]) error {
-		return fillGraphDefinitionWithPrefetchedComponents(ctx, d, targetMap, tgd, cfg.CopyMode, cfg.UploadType)
+		return fillGraphDefinitionWithPrefetchedComponents(ctx, d, targetMap, tgd, cfg.CopyMode, cfg.UploadType, o)
 	})
 	if err != nil {
 		return nil, err
@@ -164,6 +167,7 @@ func fillGraphDefinitionWithPrefetchedComponents(
 	tgd *transformv1alpha1.TransformationGraphDefinition,
 	copyMode transferv1alpha1.CopyMode,
 	uploadType transferv1alpha1.UploadType,
+	o *graphOptions,
 ) error {
 	slog.DebugContext(ctx, "building transformations for discovered components",
 		"components", len(d.Vertices))
@@ -206,7 +210,7 @@ func fillGraphDefinitionWithPrefetchedComponents(
 				"targetIndex", targetIdx, "targetType", fmt.Sprintf("%T", target),
 				"transformID", id)
 
-			resourceTransformIDs, fileRefs, err := processResources(ctx, v2desc, id, val, tgd, target, copyMode, uploadType)
+			resourceTransformIDs, fileRefs, err := processResources(ctx, v2desc, id, val, tgd, target, copyMode, uploadType, o)
 			if err != nil {
 				return err
 			}
@@ -235,6 +239,7 @@ func processResources(
 	toSpec runtime.Typed,
 	copyMode transferv1alpha1.CopyMode,
 	uploadType transferv1alpha1.UploadType,
+	o *graphOptions,
 ) (map[int]string, []string, error) {
 	component := val.Descriptor.Component.Name
 	version := val.Descriptor.Component.Version
@@ -255,7 +260,7 @@ func processResources(
 			continue
 		}
 
-		exprs, err := processResource(resource, access, id, val, tgd, toSpec, resourceTransformIDs, i, uploadType)
+		exprs, err := processResource(resource, access, id, val, tgd, toSpec, resourceTransformIDs, i, uploadType, o)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -285,7 +290,7 @@ func logSkippedResource(ctx context.Context, component, version string, resource
 // target repository.
 // It returns CEL spec-field expressions for the file buffers produced, referencing consumer spec
 // fields (not producer outputs) so the DAG edge points from consumer to the cleanup node.
-func processResource(resource descriptorv2.Resource, access runtime.Typed, id string, val *discoveryValue, tgd *transformv1alpha1.TransformationGraphDefinition, toSpec runtime.Typed, resourceTransformIDs map[int]string, i int, uploadType transferv1alpha1.UploadType) ([]string, error) {
+func processResource(resource descriptorv2.Resource, access runtime.Typed, id string, val *discoveryValue, tgd *transformv1alpha1.TransformationGraphDefinition, toSpec runtime.Typed, resourceTransformIDs map[int]string, i int, uploadType transferv1alpha1.UploadType, o *graphOptions) ([]string, error) {
 	_, isOCITarget := toSpec.(*oci.Repository)
 	uploadAsArtifact := isOCITarget && uploadType == transferv1alpha1.UploadAsOciArtifact
 
@@ -293,9 +298,31 @@ func processResource(resource descriptorv2.Resource, access runtime.Typed, id st
 	resourceID := identityToTransformationID(resourceIdentity)
 	addResourceID := fmt.Sprintf("%sAdd%s", id, resourceID)
 
+	// Coordinate-based S3 upload: place a supported source access into S3 via the coordinate,
+	// keeping the original access as origin. The component descriptor still goes to toSpec.
+	if uploadType == transferv1alpha1.UploadAsS3 && o.s3UploadReady() {
+		if _, ok := access.(*ociv1.OCIImage); ok {
+			if err := processOCIToS3(resource, access, o, id, tgd, resourceTransformIDs, i); err != nil {
+				return nil, fmt.Errorf("failed processing oci resource for s3 upload: %w", err)
+			}
+			return []string{fmt.Sprintf("${%s.spec.file}", addResourceID)}, nil
+		}
+	}
+
+	// Coordinate-based localization: download an S3 source into a localBlob (leg 1 of an airgapped
+	// s3 -> localBlob -> oci), recording the coordinate as referenceName and the origin as a hint.
+	if uploadType != transferv1alpha1.UploadAsS3 && o != nil && o.coordinates != nil {
+		if _, ok := access.(*s3accessv1.S3); ok {
+			if err := processS3ToLocalBlob(resource, access, o, val.Descriptor.Component.Name, val.Descriptor.Component.Version, id, tgd, toSpec, resourceTransformIDs, i); err != nil {
+				return nil, fmt.Errorf("failed localizing s3 resource: %w", err)
+			}
+			return []string{fmt.Sprintf("${%s.spec.file}", addResourceID)}, nil
+		}
+	}
+
 	switch acc := access.(type) {
 	case *descriptorv2.LocalBlob:
-		shouldUpload := uploadAsArtifact && isOCICompliantManifest(acc.MediaType) && acc.ReferenceName != ""
+		shouldUpload := uploadAsArtifact && isOCIRestorable(acc.MediaType) && acc.ReferenceName != ""
 		if err := processLocalBlob(resource, acc, id, val, tgd, toSpec, resourceTransformIDs, i, shouldUpload); err != nil {
 			return nil, fmt.Errorf("failed processing local blob resource: %w", err)
 		}

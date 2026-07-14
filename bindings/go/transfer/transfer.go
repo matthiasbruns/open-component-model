@@ -5,12 +5,29 @@ import (
 	"fmt"
 	"log/slog"
 
+	"ocm.software/open-component-model/bindings/go/repository"
 	"ocm.software/open-component-model/bindings/go/repository/component/resolvers"
 	"ocm.software/open-component-model/bindings/go/runtime"
+	"ocm.software/open-component-model/bindings/go/transfer/coordinate"
 	"ocm.software/open-component-model/bindings/go/transfer/internal"
 	transferv1alpha1 "ocm.software/open-component-model/bindings/go/transfer/v1alpha1/spec"
 	transformv1alpha1 "ocm.software/open-component-model/bindings/go/transform/spec/v1alpha1"
 )
+
+// BuildOption configures optional graph-building behavior, e.g. coordinate-based S3 upload.
+type BuildOption = internal.BuildOption
+
+// WithS3Upload enables coordinate-based upload to S3 (used with UploadType s3): source accesses
+// are reduced to a neutral coordinate via the registry and placed into S3 via the target Coordinator.
+func WithS3Upload(coordinates *coordinate.Registry, target repository.Coordinator) BuildOption {
+	return internal.WithS3Upload(coordinates, target)
+}
+
+// WithCoordinates enables coordinate-based localization of external accesses (e.g. downloading an
+// S3 source into a localBlob), stamping the coordinate and origin.
+func WithCoordinates(coordinates *coordinate.Registry) BuildOption {
+	return internal.WithCoordinates(coordinates)
+}
 
 // BuildGraphDefinition constructs a [transformv1alpha1.TransformationGraphDefinition] that
 // describes how to transfer component versions between repositories.
@@ -26,6 +43,17 @@ import (
 func BuildGraphDefinition(
 	ctx context.Context,
 	cfg *transferv1alpha1.Config,
+	mappings ...Mapping,
+) (*transformv1alpha1.TransformationGraphDefinition, error) {
+	return BuildGraphDefinitionWithOptions(ctx, cfg, nil, mappings...)
+}
+
+// BuildGraphDefinitionWithOptions is [BuildGraphDefinition] with additional build options, e.g.
+// [WithS3Upload] for coordinate-based S3 upload.
+func BuildGraphDefinitionWithOptions(
+	ctx context.Context,
+	cfg *transferv1alpha1.Config,
+	opts []BuildOption,
 	mappings ...Mapping,
 ) (*transformv1alpha1.TransformationGraphDefinition, error) {
 	if err := cfg.Validate(); err != nil {
@@ -54,7 +82,7 @@ func BuildGraphDefinition(
 		"copyMode", resolved.CopyMode,
 		"uploadType", resolved.UploadType)
 
-	return internal.BuildGraphDefinition(ctx, roots, resolved)
+	return internal.BuildGraphDefinition(ctx, roots, resolved, opts...)
 }
 
 func collectTransferRoots(ctx context.Context, mappings []Mapping) (map[string]internal.TransferRoot, error) {

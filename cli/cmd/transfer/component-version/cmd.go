@@ -16,8 +16,18 @@ import (
 	"ocm.software/open-component-model/bindings/go/credentials"
 	"ocm.software/open-component-model/bindings/go/oci/compref"
 	ctfv1 "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/ctf"
+	helmcoord "ocm.software/open-component-model/bindings/go/helm/coordinate"
+	helmaccessv1 "ocm.software/open-component-model/bindings/go/helm/spec/access/v1"
+	ocicoord "ocm.software/open-component-model/bindings/go/oci/coordinate"
+	ociaccessv1 "ocm.software/open-component-model/bindings/go/oci/spec/access/v1"
 	"ocm.software/open-component-model/bindings/go/plugin/manager"
+	"ocm.software/open-component-model/bindings/go/runtime"
+	s3coord "ocm.software/open-component-model/bindings/go/s3/coordinate"
+	s3access "ocm.software/open-component-model/bindings/go/s3/spec/access"
+	s3accessv1 "ocm.software/open-component-model/bindings/go/s3/spec/access/v1"
+	s3uploader "ocm.software/open-component-model/bindings/go/s3/spec/uploader/v1alpha1"
 	"ocm.software/open-component-model/bindings/go/transfer"
+	transfercoord "ocm.software/open-component-model/bindings/go/transfer/coordinate"
 	transferv1alpha1 "ocm.software/open-component-model/bindings/go/transfer/v1alpha1/spec"
 	graphPkg "ocm.software/open-component-model/bindings/go/transform/graph"
 	graphRuntime "ocm.software/open-component-model/bindings/go/transform/graph/runtime"
@@ -373,7 +383,40 @@ func buildGraphDefinitionFromArgs(
 		transferCfg.UploadType = transferv1alpha1.UploadType(uploadAs)
 	}
 
-	tgd, err := transfer.BuildGraphDefinition(ctx, transferCfg,
+	// Wire coordinate-based transfer. The registry of source coordinate producers is always built:
+	//   - --upload-as s3: place OCI/... sources into S3 (WithS3Upload with an S3 target).
+	//   - otherwise: localize S3 sources into localBlobs, recording the coordinate + origin (WithCoordinates).
+	registry := transfercoord.NewRegistry()
+	registry.Register(ocicoord.New(ocicoord.Config{}),
+		runtime.NewVersionedType(ociaccessv1.LegacyType, ociaccessv1.LegacyTypeVersion),
+		runtime.NewUnversionedType(ociaccessv1.LegacyType))
+	registry.Register(helmcoord.New(helmcoord.Config{}),
+		runtime.NewVersionedType(helmaccessv1.Type, helmaccessv1.Version))
+	registry.Register(s3coord.New(s3coord.Config{}),
+		runtime.NewVersionedType(s3access.S3ConsumerType, s3accessv1.Version))
+
+	var buildOpts []transfer.BuildOption
+	if transferCfg.UploadType == transferv1alpha1.UploadAsS3 {
+		s3UpCfg, err := s3uploader.LookupConfig(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("looking up s3 uploader config failed: %w", err)
+		}
+		if s3UpCfg == nil || s3UpCfg.Bucket == "" {
+			return nil, fmt.Errorf("--upload-as s3 requires an uploader.s3.ocm.software configuration with a bucket")
+		}
+		target := s3coord.New(s3coord.Config{
+			Bucket:       s3UpCfg.Bucket,
+			KeyPrefix:    s3UpCfg.KeyPrefix,
+			Region:       s3UpCfg.Region,
+			Endpoint:     s3UpCfg.Endpoint,
+			UsePathStyle: s3UpCfg.UsePathStyle,
+		})
+		buildOpts = append(buildOpts, transfer.WithS3Upload(registry, target))
+	} else {
+		buildOpts = append(buildOpts, transfer.WithCoordinates(registry))
+	}
+
+	tgd, err := transfer.BuildGraphDefinitionWithOptions(ctx, transferCfg, buildOpts,
 		transfer.Mapping{
 			Components: []transfer.ComponentID{{Component: fromSpec.Component, Version: fromSpec.Version}},
 			Target:     toSpec,

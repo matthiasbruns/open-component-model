@@ -25,9 +25,14 @@ const (
 	// resource access is updated to reference the new OCI image location. This is only
 	// supported when the target is an OCI registry (not CTF).
 	UploadAsOciArtifact UploadType = "ociArtifact"
+
+	// UploadAsS3 uploads transferred resources to an S3 bucket, rewriting the resource access
+	// to an S3 access derived from the technology-independent coordinate. The bucket/endpoint
+	// are supplied by an uploader.s3 configuration, since S3 is not the component-version target.
+	UploadAsS3 UploadType = "s3"
 )
 
 // AllUploadTypes lists every valid [UploadType] in declaration order.
 // CLI/flag builders should drive their enum sets from this slice so a new
 // constant added above is picked up without editing call sites.
-var AllUploadTypes = []UploadType{UploadAsDefault, UploadAsLocalBlob, UploadAsOciArtifact}
+var AllUploadTypes = []UploadType{UploadAsDefault, UploadAsLocalBlob, UploadAsOciArtifact, UploadAsS3}
