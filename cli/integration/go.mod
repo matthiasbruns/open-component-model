@@ -172,9 +172,9 @@ require (
 	ocm.software/open-component-model/bindings/go/plugin v0.0.17 // indirect
 	ocm.software/open-component-model/bindings/go/rsa v0.0.0-20260715080551-5aa97236eacf // indirect
 	ocm.software/open-component-model/bindings/go/sigstore v0.0.0-20260715064559-5812c6a7c34a // indirect
-	ocm.software/open-component-model/bindings/go/transfer v0.0.0-20260715064559-5812c6a7c34a // indirect
+	ocm.software/open-component-model/bindings/go/transfer v0.0.0-20260716120024-a437b4740573 // indirect
 	ocm.software/open-component-model/bindings/go/transform v0.0.0-20260715064559-5812c6a7c34a // indirect
-	ocm.software/open-component-model/bindings/go/wget v0.0.0-20260715064559-5812c6a7c34a // indirect
+	ocm.software/open-component-model/bindings/go/wget v0.0.0-20260716120024-a437b4740573 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/kustomize/api v0.21.1 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.21.1 // indirect

@@ -461,12 +461,12 @@ ocm.software/open-component-model/bindings/go/signing v0.0.0-20260715064559-5812
 ocm.software/open-component-model/bindings/go/signing v0.0.0-20260715064559-5812c6a7c34a/go.mod h1:IMG0BAXL2FkAnyi6j6PlS+ATwj9Hv061Iq9lwPpczBc=
 ocm.software/open-component-model/bindings/go/sigstore v0.0.0-20260715064559-5812c6a7c34a h1:qXvty76Id5OdT6AkB8y9rKhSgq/XrsPNDAJAoC5MQtU=
 ocm.software/open-component-model/bindings/go/sigstore v0.0.0-20260715064559-5812c6a7c34a/go.mod h1:1wDEo01012w0HJ0Ooa2cg+Q0oqwgDpUiHXPeIYItSew=
-ocm.software/open-component-model/bindings/go/transfer v0.0.0-20260715064559-5812c6a7c34a h1:Ytp5IgkzdjveKyMV0NkC5tEbQHmMmc92lEnUH4xGbOc=
-ocm.software/open-component-model/bindings/go/transfer v0.0.0-20260715064559-5812c6a7c34a/go.mod h1:9sApfGNeY2njQjHqQBcUbDRcb/5E6rF4Lapbzyhwrxo=
+ocm.software/open-component-model/bindings/go/transfer v0.0.0-20260716120024-a437b4740573 h1:MkZsVDBd0WoySkZR0emPEG8e/w2PCbaS++hkgiQtYZ8=
+ocm.software/open-component-model/bindings/go/transfer v0.0.0-20260716120024-a437b4740573/go.mod h1:meI2c8iPftt92Ozj2sC+uqj2phQuePbvM2qoswCpZpo=
 ocm.software/open-component-model/bindings/go/transform v0.0.0-20260715064559-5812c6a7c34a h1:DwFMT1Mbt1YAHruLa6b57QquAE9UNKaAuKZbe2z3+hs=
 ocm.software/open-component-model/bindings/go/transform v0.0.0-20260715064559-5812c6a7c34a/go.mod h1:ku/q7hkIBKKnGf6rxoYNeMERGcbrYV/EsdtaD1a50vY=
-ocm.software/open-component-model/bindings/go/wget v0.0.0-20260715064559-5812c6a7c34a h1:ZLdq83VDXOW0hzvS+jGjDWa/l4SdMA1SzVAshEyEfUA=
-ocm.software/open-component-model/bindings/go/wget v0.0.0-20260715064559-5812c6a7c34a/go.mod h1:hZoiOigIgAEGOnnLvbctpCy8hqrSfV5T8m5hVaDgWUk=
+ocm.software/open-component-model/bindings/go/wget v0.0.0-20260716120024-a437b4740573 h1:jMydA6Xq4K00EmghUSUX+9g5gHbNhxUO5UOPGWgd1SQ=
+ocm.software/open-component-model/bindings/go/wget v0.0.0-20260716120024-a437b4740573/go.mod h1:tk2mpLEz8RDwesw2W46DvuKQykHUrEFcbb4mdmLpwwE=
 oras.land/oras-go/v2 v2.6.2 h1:N04RXngAp1LJKTG6ifz3xHPipasEkWr+hFmInja5YKo=
 oras.land/oras-go/v2 v2.6.2/go.mod h1:PlTtg4JTDJkDe8yVHpM2wz7/YDc00GVas+i4jAW2TZ4=
 pgregory.net/rapid v1.2.0 h1:keKAYRcjm+e1F0oAuU5F5+YPAWcyxNNRK2wud503Gnk=
