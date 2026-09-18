@@ -1,6 +1,9 @@
 #!/bin/sh
 # PR #3635: a configured versioning scheme is honoured on write and ignored on read.
 # Run from the repository root.
+#
+# The single scheme below claims BOTH versions and orders them unambiguously,
+# so the result cannot be blamed on a badly written scheme.
 set -e
 
 cd bindings/go/cli
@@ -15,8 +18,8 @@ type: generic.config.ocm.software/v1
 configurations:
   - type: versioning.config.ocm.software/v1alpha1
     schemes:
-      - name: calver-build
-        pattern: '^(?P<year>\d{4})\.(?P<month>\d{2})\.(?P<day>\d{2})\.(?P<build>\d+)$'
+      - name: calver
+        pattern: '^(?P<year>\d{4})\.(?P<month>\d{2})\.(?P<day>\d{2})(\.(?P<build>\d+))?$'
         comparisonGroups: [year, month, day, build]
 EOF
 

@@ -24,6 +24,25 @@ a version at parse time. This PR relaxes that pattern to `^.+$` and adds a
 registry check that a configured scheme passes, so the write side now admits
 versions the read side cannot return.
 
+## Verification that this is really the cause
+
+Three checks were run before filing:
+
+1. **Attribution.** Patching only the `SortPolicyLooseSemverDescending` branch in
+   `bindings/go/oci/internal/lister/lister.go` to keep candidates instead of
+   `continue`-ing on them, changing nothing else, makes both versions appear —
+   and the CLI-layer registry sort puts `2024.03.15.7` first, correctly. So the
+   rest of the plumbing this PR adds already works; only the lister is unwired.
+2. **Not a bad scheme.** The config uses a single scheme that claims *both*
+   versions and orders them by the same capture groups. The version still
+   disappears.
+3. **Not a flag.** `get cv` has no flag affecting this. Its `--semver-constraint`
+   defaults to `> 0.0.0-0`, so `Registry.Filter` does run, and it retains the
+   version — the loss happens earlier, in the lister.
+
+The data is intact throughout: `get cv ./ctf//acme.org/svc:2024.03.15.7`
+retrieves the component version fine. It is purely the listing.
+
 ## Running it
 
 ```sh
