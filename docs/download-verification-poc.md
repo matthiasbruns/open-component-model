@@ -3,66 +3,53 @@
 This experiment builds on [PR #3641](https://github.com/open-component-model/open-component-model/pull/3641),
 pinned at `a423aea3bb205c4abe4bfc2f534a6aba5640753e`.
 
-## Architecture: compose at the plugin boundary
+## Packaging
 
-The CLI already obtains a `resource.Repository` from
-`ResourcePluginRegistry.GetResourcePlugin`. The registry now returns a facade
-combining the selected downloader and a verifier provider. If the repository
-implements `repository.ResourceVerifierProvider`, its provider wins. Otherwise,
-the facade uses its generic fallback. Neither the CLI nor each individual
-repository constructor needs to remember to invoke verification.
+All reusable resource-verification logic lives in `bindings/go/repository/verify`:
 
-```text
-CLI / controller / other plugin consumers
-    GetResourcePlugin(access)
-        -> built-in repository OR external-plugin converter
-        -> select repository-provided verifier, otherwise generic fallback
-        -> shared verification facade
-    GetResourceCredentialConsumerIdentity(resource)
-        -> unchanged forwarding to selected repository
-    credentialGraph.Resolve(identity)
-        -> unchanged credential resolution
-    DownloadResource(resource, credentials)
-        -> provider validates and snapshots expected digest
-        -> selected repository downloads content
-        -> verifier wraps downloaded content
-    consume blob through EOF and check errors
+- `NewResourceRepository`: a facade over `repository.ResourceRepository`.
+- `ResourceVerifierProvider` and `ResourceVerifier`: optional technology-specific
+  verification supplied by the wrapped repository.
+- `WithFallbackResourceVerifierProvider`: configures the generic fallback.
+- Digest parsing, missing-digest policy, and the generic implementation.
+
+This package imports neither the plugin manager nor the CLI. Low-level byte
+verification remains in `blob/verification`, with no resource dependencies.
+
+The plugin registry only exposes a generic `SetRepositoryDecorator` hook. It has
+no verification imports, policies, or automatic verification defaults. Only CLI
+plugin registration (`cli/internal/plugin/builtin.Register`) installs verification:
+
+```go
+manager.ResourcePluginRegistry.SetRepositoryDecorator(
+    func(base resource.Repository) resource.Repository {
+        return verify.NewResourceRepository(base)
+    },
+)
 ```
 
-Both branches of plugin lookup are wrapped. Merely changing
-`ResourceRegistry.DownloadResource` would not be sufficient: the CLI obtains a
-plugin and invokes its methods directly.
+The hook adapts both built-in repositories and converted external plugins at
+lookup time, including plugins registered before the hook was configured. Merely
+wrapping the built-in registrations would leave external plugins unprotected.
+It does not change already-returned handles. Setup should finish before lookups.
 
-The default facade handles generic blob verification on the host side. For an
-external plugin, its existing `GetGlobalResource` RPC returns a `Location`; the
-existing converter creates a blob, and the facade then attaches verification.
-Generic fallback does not need a new RPC or a claim that its output is verified.
-External adapters currently do not expose the optional provider capability, so
-external plugins use the fallback. Advertising and adapting a specialized external
-verification capability would require a separate wire-contract extension.
+## Repository-provided verification, generic fallback otherwise
 
-The facade forwards upload and credential-identity calls unchanged. It preserves
-`OwnershipAwareRepository` and `SBOMDiscoverer` only when the selected repository
-supports them, including the combination of both capabilities.
+```text
+CLI obtains resource.Repository through GetResourcePlugin
+    -> generic registry decorator hook
+    -> verify.NewResourceRepository(selected downloader)
+        -> repository implements verify.ResourceVerifierProvider? use it
+        -> otherwise use generic fallback
 
-## Interfaces and packaging
+CLI calls DownloadResource(resource, credentials)
+    -> selected provider validates and snapshots expectation
+    -> wrapped repository downloads content
+    -> selected verifier verifies or wraps the content
+```
 
-- `blob/verification`: byte-level streaming verification against an independent
-  digest, without resource or plugin dependencies.
-- `repository/resource_verification.go`: `ResourceVerifierProvider` selects and
-  prepares a `ResourceVerifier` before transport is invoked. The generic provider
-  interprets descriptor digests and binds the expected digest to a verifier.
-- `plugin/manager/registries/resource/verification.go`: the private facade combines
-  the existing `resource.Repository` with that provider.
-- `plugin/manager/registries/resource/registry.go`: installs the facade on both
-  built-in and external lookup paths.
-
-This follows the credentials architecture: domain interfaces describe behavior,
-providers supply implementations, and shared orchestration uses those interfaces.
-There is no second `ResourceBackend` hierarchy and no per-technology public facade.
-GitHub, S3, and wget implementations are transport implementations again.
-
-Verifier contracts:
+The repository can implement `GetResourceVerifier` alongside its existing download
+methods. It does not need to invoke verification itself: the facade owns that.
 
 ```go
 type ResourceVerifierProvider interface {
@@ -74,117 +61,82 @@ type ResourceVerifier interface {
 }
 ```
 
-A resource repository supplies custom normalization by implementing
-`GetResourceVerifier` alongside its existing download methods. The facade selects
-it automatically during lookup:
+A provider error, nil verifier, or verification failure is returned to the caller,
+**never retried through the fallback**. Fallback means absent capability, not failed
+verification. Providers must capture the expectation before transport can mutate
+it. Verifiers own their input, including cleanup on failure.
+
+Uploads and credential identity calls are forwarded unchanged. Typed credentials
+reach the selected downloader unchanged. The facade preserves optional
+`OwnershipAwareRepository` and `SBOMDiscoverer` capabilities only when supported.
+
+## Standalone library usage and policy
+
+Libraries can use the facade without any plugin infrastructure:
 
 ```go
-provider := fallback
-if specialized, ok := repo.(repository.ResourceVerifierProvider); ok {
-    provider = specialized
-}
-```
-
-The selected provider validates and snapshots the expectation before download.
-The facade then invokes its verifier on the downloaded content; `DownloadResource`
-in the backend never needs to call verification itself. A provider error, nil
-verifier, or verification failure is returned to the caller, **never retried through
-the fallback**. Fallback means absent capability, not failed verification.
-
-The registry tests include a concrete example repository that implements a
-whitespace-normalized SHA-256 verifier. It accepts content whose raw-byte digest
-would not match, preserves the original output bytes, and rejects a normalized
-mismatch. This demonstrates specialized behavior without pretending to implement
-OCI verification.
-
-## Policy configuration
-
-The generic fallback defaults to `VerifyIfPresent`: missing digests and explicit
-exclusions pass through with a warning. Malformed digests and unsupported
-normalization fail before transport, even under this compatibility policy.
-
-Callers can require digests on the fallback path:
-
-```go
-registry := resource.NewResourceRegistry(ctx,
-    resource.WithFallbackResourceVerifierProvider(
-        repository.NewGenericResourceVerifierProvider(repository.RequireDigest),
+repo := verify.NewResourceRepository(backend,
+    verify.WithFallbackResourceVerifierProvider(
+        verify.NewGenericResourceVerifierProvider(verify.RequireDigest),
     ),
 )
-```
-
-This option only configures the fallback, not repository-provided verifiers.
-Specialized providers own their own digest policy; a globally enforced strict
-policy independent of the selected provider is outside this prototype.
-
-Registration and lookup are unchanged:
-
-```go
-if err := registry.RegisterInternalResourcePlugin(backend); err != nil {
-    return err
-}
-repo, err := registry.GetResourcePlugin(ctx, res.Access)
-if err != nil {
-    return err
-}
 content, err := repo.DownloadResource(ctx, res, credentials)
 ```
 
-The consumer sees only `resource.Repository`; it never calls a verifier itself.
-A missing fallback fails closed only if the repository supplies no provider.
-A nil verifier from the selected provider always fails closed. The generic provider
-captures an immutable expected digest before the downloader can mutate the resource;
-specialized providers must honor the same snapshot contract.
+The default generic fallback is `VerifyIfPresent`: missing digests and explicit
+exclusions pass through with a warning. Malformed digests and unsupported
+normalization fail before fetching. `RequireDigest` rejects missing expectations.
 
-## Guarantees and prototype boundaries
+Fallback options do not override repository-provided verifiers. Specialized
+providers own their own policies; a globally enforced strict policy independent
+of verifier choice is outside the prototype. A nil fallback is permitted when the
+repository supplies a provider, otherwise it fails closed.
 
-- Generic verification is streaming, not eager. Successful `DownloadResource`
-  means a verifying reader is installed; consumers must read through EOF and check
-  errors before publishing or trusting the output. Partial reads fail on close.
-  Specialized verifiers may instead verify eagerly, as the test example does.
-- `blob.Copy` probes EOF after the advertised size, allowing exact-size successful
-  verification while rejecting trailing content without writing the extra bytes.
-- Temporary blob ownership and close behavior remain forwarded through the
-  verifying blob. Consumers must discard output already written on failure.
-- Missing digests are never represented as verified. Authenticating the expected
-  digest through descriptor signatures remains a separate concern.
-- **The generic fallback supports only generic blob normalization** (and empty
-  normalization for legacy compatibility). A repository can override it by
-  implementing the provider capability. No production OCI provider is implemented
-  yet, so OCI-specific normalization still fails before download on that path.
-  There is no silent OCI bypass: this is not a production-ready universal verifier.
-- Local resources use `GetLocalResource` on component repositories and are outside
-  this facade. Sources and directly invoked backend implementations are outside
-  it too. The guarantee belongs to the resource plugin lookup boundary.
-- Digest establishment calls transport directly, below the facade, and compares
-  any supplied expectation in its digest processor. It does not recursively invoke
-  registry-based download verification.
-- The registry option is available to Go callers. Exposing strict policy through
-  CLI configuration and implementing production technology-specific verifiers are
-  follow-ups.
-- Go interfaces cannot prove arbitrary verifier implementations are correct. The
-  prototype enforces invocation of the configured verifier, not plugin honesty.
-- `VerifyDownload` remains as a compatibility helper; backends no longer call it.
+## External plugins
 
-## Tests and review
+External plugins retain the existing `GetGlobalResource` RPC returning a `Location`.
+The host-side converter creates a blob; CLI-installed decoration applies the
+facade and generic verification to it. No plugin verification claim is trusted in
+place of the host check.
 
-Registry tests cover built-in and converted external plugins, matching/mismatching
-content, pre-fetch rejection, policy, digest mutation, credential forwarding,
-upload forwarding, backend errors, and every ownership/SBOM capability combination.
-Repository-provider tests prove custom normalization, provider precedence,
-prepare/download/verify ordering, digest snapshots, nil-fallback behavior, and no
-fallback after provider or verification errors.
-External tests return a local-file location and prove host-side mismatch detection.
-The existing subprocess plugin fixture also exercises lookup through the facade.
+External adapters currently do not expose the optional provider interface. A
+specialized external verifier requires a future capability/wire-contract extension.
 
-Backend verification tests now go through registry registration and lookup; raw
-backend tests explicitly show that direct transport calls do not verify resource
-digests. Provider and blob tests exercise the underlying pieces independently.
+## Boundaries
 
-Focused validation from `bindings/go`:
+- Generic verification is streaming. Consumers must read to EOF and check errors
+  before trusting or publishing content; partial reads fail on close. Specialized
+  verifiers may instead verify eagerly.
+- `blob.Copy` probes EOF after exact-size copies so verification completes and
+  trailing bytes are rejected without writing them. Failed output must be discarded.
+- Only generic blob normalization (plus legacy empty normalization) is implemented
+  by the fallback. No production OCI verifier exists yet: OCI-specific normalization
+  fails unless its repository supplies an appropriate provider. No silent bypass.
+- CLI plugin registration enables verification. A bare resource registry or plugin
+  manager does not. Other applications, including the controller, must explicitly
+  install the decorator or construct the facade to obtain this guarantee.
+- Local resources (`GetLocalResource`), sources, and directly invoked raw backends
+  are outside the facade. Digest establishment intentionally uses raw transport.
+- Authenticating the expected digest through signatures is a separate concern.
+- Go interfaces enforce orchestration, not the correctness of a custom verifier.
+
+## Examples and validation
+
+`plugin/manager/registries/resource/verification_test.go` contains a concrete
+repository-provided whitespace-normalized SHA-256 verifier. It demonstrates custom
+normalization, original-byte preservation, mismatch rejection, provider precedence,
+and no fallback after errors. These integration tests explicitly install decoration.
+
+`repository/verify/resource_repository_test.go` tests the reusable facade without
+plugins: forwarding, policies, ordering, snapshot expectations, and optional
+capabilities. `cli/internal/plugin/builtin/builtin_test.go` demonstrates that a raw
+registry becomes verification-aware through CLI registration and still prefers a
+repository-provided verifier.
+
+From `bindings/go`:
 
 ```sh
-go test -short ./blob/... ./repository/... ./plugin/manager/registries/resource/... ./github/... ./s3/repository/... ./wget/repository/... ./cli/cmd/download/... ./cli/internal/plugin/builtin/...
+go test -short ./repository/... ./plugin/manager/registries/resource ./cli/internal/plugin/builtin/... ./cli/cmd/download/... ./github/repository/resource ./s3/repository ./wget/repository
 ```
 
 Repository-wide checks:
@@ -194,5 +146,5 @@ task tools:lint
 task bindings/go:test
 ```
 
-The fork draft targets a snapshot of PR #3641, keeping its review diff limited to
+The fork draft targets a snapshot of PR #3641, keeping the review diff limited to
 this experiment. The original author's branch is untouched.

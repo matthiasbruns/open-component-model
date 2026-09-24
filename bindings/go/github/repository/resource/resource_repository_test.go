@@ -21,6 +21,7 @@ import (
 	v1 "ocm.software/open-component-model/bindings/go/github/spec/access/v1"
 	httpv1alpha1 "ocm.software/open-component-model/bindings/go/http/spec/config/v1alpha1"
 	resourceregistry "ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource"
+	"ocm.software/open-component-model/bindings/go/repository/verify"
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
@@ -215,6 +216,9 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		t.Helper()
 		r := require.New(t)
 		registry := resourceregistry.NewResourceRegistry(t.Context())
+		registry.SetRepositoryDecorator(func(base resourceregistry.Repository) resourceregistry.Repository {
+			return verify.NewResourceRepository(base)
+		})
 		r.NoError(registry.RegisterInternalResourcePlugin(NewResourceRepository()))
 		plugin, err := registry.GetResourcePlugin(t.Context(), res.Access)
 		r.NoError(err)

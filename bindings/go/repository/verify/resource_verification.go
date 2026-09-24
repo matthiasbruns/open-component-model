@@ -1,4 +1,4 @@
-package repository
+package verify
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type ResourceVerifier interface {
 
 // ResourceVerifierProvider validates and snapshots a resource's verification
 // expectation. Resource repositories can optionally implement this interface to
-// supply technology-specific verification; the plugin facade prefers it over its
+// supply technology-specific verification; NewResourceRepository prefers it over its
 // generic fallback. Selection errors must not trigger fallback verification.
 // Call GetResourceVerifier before downloading the resource.
 type ResourceVerifierProvider interface {

@@ -1,4 +1,4 @@
-package resource
+package verify
 
 import (
 	"context"
@@ -10,31 +10,43 @@ import (
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
-// Option configures resource-plugin orchestration, independently of transport.
-type Option func(*ResourceRegistry)
+// Option configures resource repository verification.
+type Option func(*verifyingRepository)
 
 // WithFallbackResourceVerifierProvider configures verification for repositories
-// that do not implement repository.ResourceVerifierProvider. The default fallback
-// supports generic blobs and permits missing digests. It never overrides a
+// that do not implement ResourceVerifierProvider. It never overrides a
 // repository-provided verifier or handles its errors. A nil fallback fails closed
 // when the repository does not supply its own provider.
-func WithFallbackResourceVerifierProvider(provider repository.ResourceVerifierProvider) Option {
-	return func(r *ResourceRegistry) { r.fallbackVerifiers = provider }
+func WithFallbackResourceVerifierProvider(provider ResourceVerifierProvider) Option {
+	return func(r *verifyingRepository) { r.verifiers = provider }
 }
 
 type verifyingRepository struct {
-	base      Repository
-	verifiers repository.ResourceVerifierProvider
+	base      repository.ResourceRepository
+	verifiers ResourceVerifierProvider
 }
 
-func newVerifyingRepository(base Repository, verifiers repository.ResourceVerifierProvider) Repository {
-	if specialized, ok := base.(repository.ResourceVerifierProvider); ok {
-		verifiers = specialized
+// NewResourceRepository wraps base with download verification. By default, it
+// uses NewGenericResourceVerifierProvider(VerifyIfPresent). If base implements
+// ResourceVerifierProvider, that provider takes precedence over the fallback.
+// Verifier selection errors are returned before downloading, without fallback.
+// OwnershipAwareRepository and SBOMDiscoverer are preserved when base implements
+// them. Uploads and credential identity resolution are forwarded unchanged.
+// Consumers must read downloaded content to EOF and check errors before trusting it.
+func NewResourceRepository(base repository.ResourceRepository, opts ...Option) repository.ResourceRepository {
+	verified := &verifyingRepository{
+		base:      base,
+		verifiers: NewGenericResourceVerifierProvider(VerifyIfPresent),
 	}
-	verified := &verifyingRepository{base: base, verifiers: verifiers}
+	for _, opt := range opts {
+		opt(verified)
+	}
+	if specialized, ok := base.(ResourceVerifierProvider); ok {
+		verified.verifiers = specialized
+	}
 	ownership, hasOwnership := base.(repository.OwnershipAwareRepository)
 	sbom, hasSBOM := base.(repository.SBOMDiscoverer)
-	// Preserve optional capabilities without advertising ones the plugin lacks.
+	// Preserve optional capabilities without advertising ones the repository lacks.
 	switch {
 	case hasOwnership && hasSBOM:
 		return &struct {

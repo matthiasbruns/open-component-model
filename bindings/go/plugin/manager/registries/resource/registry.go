@@ -13,14 +13,12 @@ import (
 	resourcev1 "ocm.software/open-component-model/bindings/go/plugin/manager/contracts/resource/v1"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/plugins"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/types"
-	"ocm.software/open-component-model/bindings/go/repository"
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
 // NewResourceRegistry creates a new registry and initializes maps.
-func NewResourceRegistry(ctx context.Context, opts ...Option) *ResourceRegistry {
-	r := &ResourceRegistry{
-		fallbackVerifiers:  repository.NewGenericResourceVerifierProvider(repository.VerifyIfPresent),
+func NewResourceRegistry(ctx context.Context) *ResourceRegistry {
+	return &ResourceRegistry{
 		ctx:                ctx,
 		capabilities:       make(map[string]resourcev1.CapabilitySpec),
 		registry:           make(map[runtime.Type]types.Plugin),
@@ -28,15 +26,11 @@ func NewResourceRegistry(ctx context.Context, opts ...Option) *ResourceRegistry 
 		internalPlugins:    make(map[runtime.Type]Repository),
 		constructedPlugins: make(map[string]*constructedPlugin),
 	}
-	for _, opt := range opts {
-		opt(r)
-	}
-	return r
 }
 
 // ResourceRegistry holds all plugins that implement capabilities corresponding to RepositoryPlugin operations.
 type ResourceRegistry struct {
-	fallbackVerifiers  repository.ResourceVerifierProvider
+	decorator          func(Repository) Repository
 	ctx                context.Context
 	mu                 sync.Mutex
 	capabilities       map[string]resourcev1.CapabilitySpec
@@ -78,9 +72,8 @@ func (r *ResourceRegistry) AddPlugin(plugin types.Plugin, spec runtime.Typed) er
 	return nil
 }
 
-// GetResourcePlugin returns a repository facade for a specific access type.
-// The facade prefers a provider implemented by the repository and otherwise uses
-// the configured fallback. Verification may complete lazily as content is read.
+// GetResourcePlugin returns the repository for an access type, applying the
+// configured decorator equally to built-in and external implementations.
 func (r *ResourceRegistry) GetResourcePlugin(ctx context.Context, spec runtime.Typed) (Repository, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -95,7 +88,7 @@ func (r *ResourceRegistry) GetResourcePlugin(ctx context.Context, spec runtime.T
 			return nil, fmt.Errorf("no internal plugin registered for type %v", typ)
 		}
 
-		return newVerifyingRepository(p, r.fallbackVerifiers), nil
+		return r.decorate(p), nil
 	}
 
 	plugin, err := r.getPlugin(ctx, typ)
@@ -103,7 +96,7 @@ func (r *ResourceRegistry) GetResourcePlugin(ctx context.Context, spec runtime.T
 		return nil, err
 	}
 
-	return newVerifyingRepository(r.externalToResourcePluginConverter(plugin, r.scheme), r.fallbackVerifiers), nil
+	return r.decorate(r.externalToResourcePluginConverter(plugin, r.scheme)), nil
 }
 
 // getPlugin returns a Resource plugin for a given type using a specific plugin storage map. It will also first look

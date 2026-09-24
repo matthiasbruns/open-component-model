@@ -20,6 +20,7 @@ import (
 	filesystemv1alpha1 "ocm.software/open-component-model/bindings/go/configuration/filesystem/v1alpha1/spec"
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	resourceregistry "ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource"
+	"ocm.software/open-component-model/bindings/go/repository/verify"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/s3/internal/download"
 	accessspec "ocm.software/open-component-model/bindings/go/s3/spec/access"
@@ -206,6 +207,9 @@ func Test_DownloadResource_DigestVerification(t *testing.T) {
 
 		r := require.New(t)
 		registry := resourceregistry.NewResourceRegistry(t.Context())
+		registry.SetRepositoryDecorator(func(base resourceregistry.Repository) resourceregistry.Repository {
+			return verify.NewResourceRepository(base)
+		})
 		r.NoError(registry.RegisterInternalResourcePlugin(repo))
 		plugin, err := registry.GetResourcePlugin(t.Context(), res.Access)
 		r.NoError(err)
