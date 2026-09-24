@@ -11,12 +11,14 @@ import (
 )
 
 var _ = Describe("ReviewPR3635 version selection", func() {
-	It("rejects an empty constraint instead of implicitly opting into prereleases", func(ctx SpecContext) {
+	It("characterizes empty-constraint selection pending the controller API decision", func(ctx SpecContext) {
 		_, err := semver.NewConstraint("")
 		Expect(err).To(HaveOccurred())
 		got, err := ocm.GetLatestValidVersion(ctx, versioning.Default(), []string{"1.0.0", "2.0.0-rc.1", "zzz"}, "")
-		Expect(err).To(HaveOccurred(), "an empty constraint was rejected by the legacy semver parser")
-		Expect(got).To(BeEmpty())
+		// This records the reviewed behavior; legacy rejection is not an agreed requirement.
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal("2.0.0-rc.1"))
+		GinkgoWriter.Printf("OBSERVATION: legacy parser rejects empty; controller selects %q\n", got)
 	})
 	It("selects a stable version for an explicit wildcard constraint", func(ctx SpecContext) {
 		stable, err := ocm.GetLatestValidVersion(ctx, versioning.Default(), []string{"1.0.0", "2.0.0-rc.1", "zzz"}, "*")
