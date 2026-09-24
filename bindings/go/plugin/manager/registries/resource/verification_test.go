@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +87,7 @@ func TestRegistryVerificationDownload(t *testing.T) {
 			}}
 			var opts []Option
 			if tt.strict {
-				opts = append(opts, WithResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest)))
+				opts = append(opts, WithFallbackResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest)))
 			}
 			plugin := verificationLookup(t, backend, opts...)
 			content, err := plugin.DownloadResource(t.Context(), res, credentials)
@@ -110,6 +111,201 @@ func (f verificationProviderFunc) GetResourceVerifier(ctx context.Context, res *
 	return f(ctx, res)
 }
 
+type verificationVerifierFunc func(context.Context, blob.ReadOnlyBlob) (blob.ReadOnlyBlob, error)
+
+func (f verificationVerifierFunc) Verify(ctx context.Context, content blob.ReadOnlyBlob) (blob.ReadOnlyBlob, error) {
+	return f(ctx, content)
+}
+
+// whitespaceVerificationRepository demonstrates a repository-specific normalization
+// without requiring a corresponding algorithm in the generic fallback.
+type whitespaceVerificationRepository struct {
+	*verificationBackend
+	step func(context.Context, string)
+}
+
+var _ BuiltinResourceRepository = (*whitespaceVerificationRepository)(nil)
+var _ repository.ResourceVerifierProvider = (*whitespaceVerificationRepository)(nil)
+
+func (b *whitespaceVerificationRepository) GetResourceVerifier(ctx context.Context, res *descriptor.Resource) (repository.ResourceVerifier, error) {
+	b.step(ctx, "prepare")
+	if res.Digest == nil || res.Digest.NormalisationAlgorithm != "trimWhitespace/v1" || res.Digest.HashAlgorithm != "SHA-256" {
+		return nil, errors.New("expected SHA-256 trimWhitespace/v1 digest")
+	}
+	expected := godigest.NewDigestFromEncoded(godigest.SHA256, res.Digest.Value)
+	if err := expected.Validate(); err != nil {
+		return nil, err
+	}
+	return verificationVerifierFunc(func(ctx context.Context, content blob.ReadOnlyBlob) (blob.ReadOnlyBlob, error) {
+		b.step(ctx, "verify")
+		var data bytes.Buffer
+		err := blob.Copy(&data, content)
+		if closer, ok := content.(io.Closer); ok {
+			err = errors.Join(err, closer.Close())
+		}
+		if err != nil {
+			return nil, err
+		}
+		if godigest.FromBytes(bytes.TrimSpace(data.Bytes())) != expected {
+			return nil, errors.New("normalized content digest mismatch")
+		}
+		return inmemory.New(bytes.NewReader(data.Bytes())), nil
+	}), nil
+}
+
+func TestRegistryVerificationRepositoryProvider(t *testing.T) {
+	for _, fallback := range []string{"default", "failing spy", "nil"} {
+		for _, payload := range []string{" \texpected\n", " \ttampered\n"} {
+			for _, mutation := range []string{"modify", "replace", "remove"} {
+				t.Run(fallback+"/"+strings.TrimSpace(payload)+"/"+mutation, func(t *testing.T) {
+					r := require.New(t)
+					res := verificationResource(verificationDigest("expected"))
+					res.Digest.NormalisationAlgorithm = "trimWhitespace/v1"
+					generic := repository.NewGenericResourceVerifierProvider(repository.VerifyIfPresent)
+					verifier, err := generic.GetResourceVerifier(t.Context(), res)
+					r.ErrorContains(err, "unsupported normalisation")
+					r.Nil(verifier)
+
+					var steps []string
+					step := func(ctx context.Context, name string) {
+						r.Equal(t.Context(), ctx)
+						steps = append(steps, name)
+					}
+					credentials := &runtime.Raw{Type: runtime.NewUnversionedType("credentials")}
+					backend := &whitespaceVerificationRepository{
+						step: step,
+						verificationBackend: &verificationBackend{download: func(ctx context.Context, got *descriptor.Resource, creds runtime.Typed) (blob.ReadOnlyBlob, error) {
+							r.Equal([]string{"prepare"}, steps)
+							step(ctx, "download")
+							r.Same(res, got)
+							r.Same(credentials, creds)
+							switch mutation {
+							case "modify":
+								got.Digest.Value = verificationDigest("tampered").Value
+							case "replace":
+								got.Digest = verificationDigest("tampered")
+							case "remove":
+								got.Digest = nil
+							}
+							return inmemory.New(strings.NewReader(payload)), nil
+						}},
+					}
+					fallbackCalls := 0
+					var opts []Option
+					switch fallback {
+					case "failing spy":
+						opts = append(opts, WithFallbackResourceVerifierProvider(verificationProviderFunc(func(context.Context, *descriptor.Resource) (repository.ResourceVerifier, error) {
+							fallbackCalls++
+							return nil, errors.New("unexpected fallback")
+						})))
+					case "nil":
+						opts = append(opts, WithFallbackResourceVerifierProvider(nil))
+					}
+					plugin := verificationLookup(t, backend, opts...)
+					content, err := plugin.DownloadResource(t.Context(), res, credentials)
+					r.Equal([]string{"prepare", "download", "verify"}, steps)
+					r.Zero(fallbackCalls)
+					if strings.TrimSpace(payload) == "tampered" {
+						r.ErrorContains(err, "normalized content digest mismatch")
+						r.Nil(content)
+					} else {
+						r.NoError(err)
+						var dst bytes.Buffer
+						r.NoError(blob.Copy(&dst, content))
+						r.Equal(payload, dst.String(), "verification must preserve the original bytes")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestRegistryVerificationRepositoryProviderDoesNotFallBack(t *testing.T) {
+	providerErr := errors.New("repository provider failed")
+	verifyErr := errors.New("repository verification failed")
+	for _, tt := range []struct {
+		name    string
+		wantErr error
+		steps   []string
+	}{
+		{name: "provider error", wantErr: providerErr, steps: []string{"prepare"}},
+		{name: "nil verifier", steps: []string{"prepare"}},
+		{name: "verify error", wantErr: verifyErr, steps: []string{"prepare", "download", "verify"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			res := verificationResource(verificationDigest("expected"))
+			payload := inmemory.New(strings.NewReader("expected"))
+			var steps []string
+			backend := &struct {
+				*verificationBackend
+				repository.ResourceVerifierProvider
+			}{
+				verificationBackend: &verificationBackend{download: func(context.Context, *descriptor.Resource, runtime.Typed) (blob.ReadOnlyBlob, error) {
+					steps = append(steps, "download")
+					return payload, nil
+				}},
+				ResourceVerifierProvider: verificationProviderFunc(func(ctx context.Context, got *descriptor.Resource) (repository.ResourceVerifier, error) {
+					r.Equal(t.Context(), ctx)
+					r.Same(res, got)
+					steps = append(steps, "prepare")
+					switch tt.name {
+					case "provider error":
+						return nil, providerErr
+					case "nil verifier":
+						return nil, nil
+					default:
+						return verificationVerifierFunc(func(ctx context.Context, content blob.ReadOnlyBlob) (blob.ReadOnlyBlob, error) {
+							r.Equal(t.Context(), ctx)
+							r.Same(payload, content)
+							steps = append(steps, "verify")
+							return nil, verifyErr
+						}), nil
+					}
+				}),
+			}
+			fallbackCalls := 0
+			fallback := verificationProviderFunc(func(context.Context, *descriptor.Resource) (repository.ResourceVerifier, error) {
+				fallbackCalls++
+				return nil, errors.New("unexpected fallback")
+			})
+			plugin := verificationLookup(t, backend, WithFallbackResourceVerifierProvider(fallback))
+			content, err := plugin.DownloadResource(t.Context(), res, nil)
+			if tt.wantErr != nil {
+				r.ErrorIs(err, tt.wantErr)
+			} else {
+				r.ErrorContains(err, "no verifier returned")
+			}
+			r.Nil(content)
+			r.Equal(tt.steps, steps)
+			r.Zero(fallbackCalls)
+		})
+	}
+}
+
+func TestRegistryVerificationFallbackWithoutRepositoryProvider(t *testing.T) {
+	r := require.New(t)
+	res := verificationResource(verificationDigest("expected"))
+	fallbackErr := errors.New("fallback selected")
+	fallbackCalls, downloadCalls := 0, 0
+	backend := &verificationBackend{download: func(context.Context, *descriptor.Resource, runtime.Typed) (blob.ReadOnlyBlob, error) {
+		downloadCalls++
+		return nil, errors.New("unexpected transport")
+	}}
+	fallback := verificationProviderFunc(func(ctx context.Context, got *descriptor.Resource) (repository.ResourceVerifier, error) {
+		r.Equal(t.Context(), ctx)
+		r.Same(res, got)
+		fallbackCalls++
+		return nil, fallbackErr
+	})
+	plugin := verificationLookup(t, backend, WithFallbackResourceVerifierProvider(fallback))
+	content, err := plugin.DownloadResource(t.Context(), res, nil)
+	r.ErrorIs(err, fallbackErr)
+	r.Nil(content)
+	r.Equal(1, fallbackCalls)
+	r.Zero(downloadCalls)
+}
+
 func TestRegistryVerificationRejectsBeforeTransport(t *testing.T) {
 	providerErr := errors.New("provider failed")
 	for _, tt := range []struct {
@@ -121,11 +317,11 @@ func TestRegistryVerificationRejectsBeforeTransport(t *testing.T) {
 		{name: "malformed", digest: &descriptor.Digest{HashAlgorithm: "SHA-256", Value: "not-hex"}, message: "invalid digest"},
 		{name: "incomplete", digest: &descriptor.Digest{HashAlgorithm: "SHA-256"}, message: "incomplete digest"},
 		{name: "unknown normalization", digest: &descriptor.Digest{HashAlgorithm: "SHA-256", Value: verificationDigest("expected").Value, NormalisationAlgorithm: "unknown/v1"}, message: "unsupported normalisation"},
-		{name: "strict missing", opts: []Option{WithResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest))}, message: "requires a digest"},
-		{name: "strict excluded", digest: &descriptor.Digest{HashAlgorithm: descriptor.NoDigest, NormalisationAlgorithm: descriptor.ExcludeFromSignature}, opts: []Option{WithResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest))}, message: "requires a digest"},
-		{name: "nil provider", opts: []Option{WithResourceVerifierProvider(nil)}, message: "provider is required"},
-		{name: "nil verifier", opts: []Option{WithResourceVerifierProvider(verificationProviderFunc(func(context.Context, *descriptor.Resource) (repository.ResourceVerifier, error) { return nil, nil }))}, message: "no verifier returned"},
-		{name: "provider error", opts: []Option{WithResourceVerifierProvider(verificationProviderFunc(func(context.Context, *descriptor.Resource) (repository.ResourceVerifier, error) {
+		{name: "strict missing", opts: []Option{WithFallbackResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest))}, message: "requires a digest"},
+		{name: "strict excluded", digest: &descriptor.Digest{HashAlgorithm: descriptor.NoDigest, NormalisationAlgorithm: descriptor.ExcludeFromSignature}, opts: []Option{WithFallbackResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest))}, message: "requires a digest"},
+		{name: "nil provider", opts: []Option{WithFallbackResourceVerifierProvider(nil)}, message: "provider is required"},
+		{name: "nil verifier", opts: []Option{WithFallbackResourceVerifierProvider(verificationProviderFunc(func(context.Context, *descriptor.Resource) (repository.ResourceVerifier, error) { return nil, nil }))}, message: "no verifier returned"},
+		{name: "provider error", opts: []Option{WithFallbackResourceVerifierProvider(verificationProviderFunc(func(context.Context, *descriptor.Resource) (repository.ResourceVerifier, error) {
 			return nil, providerErr
 		}))}, message: "provider failed"},
 	} {
@@ -214,7 +410,7 @@ func TestRegistryVerificationForwarding(t *testing.T) {
 		},
 	}
 	// Strict download policy must not interfere with identity resolution or uploads.
-	plugin := verificationLookup(t, backend, WithResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest)))
+	plugin := verificationLookup(t, backend, WithFallbackResourceVerifierProvider(repository.NewGenericResourceVerifierProvider(repository.RequireDigest)))
 	gotIdentity, err := plugin.GetResourceCredentialConsumerIdentity(ctx, res)
 	r.Equal(identity, gotIdentity)
 	r.ErrorIs(err, backendErr)

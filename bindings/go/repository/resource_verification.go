@@ -22,7 +22,10 @@ type ResourceVerifier interface {
 }
 
 // ResourceVerifierProvider validates and snapshots a resource's verification
-// expectation. Call GetResourceVerifier before downloading the resource.
+// expectation. Resource repositories can optionally implement this interface to
+// supply technology-specific verification; the plugin facade prefers it over its
+// generic fallback. Selection errors must not trigger fallback verification.
+// Call GetResourceVerifier before downloading the resource.
 type ResourceVerifierProvider interface {
 	GetResourceVerifier(context.Context, *descriptor.Resource) (ResourceVerifier, error)
 }

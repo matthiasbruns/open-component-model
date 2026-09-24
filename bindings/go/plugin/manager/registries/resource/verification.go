@@ -13,11 +13,13 @@ import (
 // Option configures resource-plugin orchestration, independently of transport.
 type Option func(*ResourceRegistry)
 
-// WithResourceVerifierProvider selects verification strategies for downloaded
-// resources. The default provider supports generic blobs and permits missing
-// digests. A nil provider fails closed rather than disabling verification.
-func WithResourceVerifierProvider(provider repository.ResourceVerifierProvider) Option {
-	return func(r *ResourceRegistry) { r.verifiers = provider }
+// WithFallbackResourceVerifierProvider configures verification for repositories
+// that do not implement repository.ResourceVerifierProvider. The default fallback
+// supports generic blobs and permits missing digests. It never overrides a
+// repository-provided verifier or handles its errors. A nil fallback fails closed
+// when the repository does not supply its own provider.
+func WithFallbackResourceVerifierProvider(provider repository.ResourceVerifierProvider) Option {
+	return func(r *ResourceRegistry) { r.fallbackVerifiers = provider }
 }
 
 type verifyingRepository struct {
@@ -26,6 +28,9 @@ type verifyingRepository struct {
 }
 
 func newVerifyingRepository(base Repository, verifiers repository.ResourceVerifierProvider) Repository {
+	if specialized, ok := base.(repository.ResourceVerifierProvider); ok {
+		verifiers = specialized
+	}
 	verified := &verifyingRepository{base: base, verifiers: verifiers}
 	ownership, hasOwnership := base.(repository.OwnershipAwareRepository)
 	sbom, hasSBOM := base.(repository.SBOMDiscoverer)

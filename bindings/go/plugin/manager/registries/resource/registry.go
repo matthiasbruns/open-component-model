@@ -20,7 +20,7 @@ import (
 // NewResourceRegistry creates a new registry and initializes maps.
 func NewResourceRegistry(ctx context.Context, opts ...Option) *ResourceRegistry {
 	r := &ResourceRegistry{
-		verifiers:          repository.NewGenericResourceVerifierProvider(repository.VerifyIfPresent),
+		fallbackVerifiers:  repository.NewGenericResourceVerifierProvider(repository.VerifyIfPresent),
 		ctx:                ctx,
 		capabilities:       make(map[string]resourcev1.CapabilitySpec),
 		registry:           make(map[runtime.Type]types.Plugin),
@@ -36,7 +36,7 @@ func NewResourceRegistry(ctx context.Context, opts ...Option) *ResourceRegistry 
 
 // ResourceRegistry holds all plugins that implement capabilities corresponding to RepositoryPlugin operations.
 type ResourceRegistry struct {
-	verifiers          repository.ResourceVerifierProvider
+	fallbackVerifiers  repository.ResourceVerifierProvider
 	ctx                context.Context
 	mu                 sync.Mutex
 	capabilities       map[string]resourcev1.CapabilitySpec
@@ -79,8 +79,8 @@ func (r *ResourceRegistry) AddPlugin(plugin types.Plugin, spec runtime.Typed) er
 }
 
 // GetResourcePlugin returns a repository facade for a specific access type.
-// Both built-in and external downloads pass through the configured verifier
-// provider. Verification may complete lazily as the returned content is read.
+// The facade prefers a provider implemented by the repository and otherwise uses
+// the configured fallback. Verification may complete lazily as content is read.
 func (r *ResourceRegistry) GetResourcePlugin(ctx context.Context, spec runtime.Typed) (Repository, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -95,7 +95,7 @@ func (r *ResourceRegistry) GetResourcePlugin(ctx context.Context, spec runtime.T
 			return nil, fmt.Errorf("no internal plugin registered for type %v", typ)
 		}
 
-		return newVerifyingRepository(p, r.verifiers), nil
+		return newVerifyingRepository(p, r.fallbackVerifiers), nil
 	}
 
 	plugin, err := r.getPlugin(ctx, typ)
@@ -103,7 +103,7 @@ func (r *ResourceRegistry) GetResourcePlugin(ctx context.Context, spec runtime.T
 		return nil, err
 	}
 
-	return newVerifyingRepository(r.externalToResourcePluginConverter(plugin, r.scheme), r.verifiers), nil
+	return newVerifyingRepository(r.externalToResourcePluginConverter(plugin, r.scheme), r.fallbackVerifiers), nil
 }
 
 // getPlugin returns a Resource plugin for a given type using a specific plugin storage map. It will also first look
