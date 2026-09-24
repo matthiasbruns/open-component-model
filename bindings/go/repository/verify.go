@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 
 	"ocm.software/open-component-model/bindings/go/blob"
-	"ocm.software/open-component-model/bindings/go/blob/verification"
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 )
 
@@ -18,19 +16,14 @@ import (
 // digest that is present and unusable errors. Content that cannot be checked
 // against the digest must not pass as verified.
 func VerifyDownload(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob) (blob.ReadOnlyBlob, error) {
-	expected, err := parseDigest(res.Digest)
+	verifier, err := NewGenericResourceVerifierProvider(VerifyIfPresent).GetResourceVerifier(ctx, res)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse digest for resource %q: %w", res.Name, handlerError(content, err))
-	}
-	if expected == "" {
-		slog.WarnContext(ctx, "resource has no digest, no verification can be performed",
-			slog.Any("resource", res.ToIdentity()))
-		return content, nil
+		return nil, handlerError(content, err)
 	}
 
-	verifying, err := verification.Wrap(content, expected)
+	verifying, err := verifier.Verify(ctx, content)
 	if err != nil {
-		return nil, fmt.Errorf("cannot verify resource %q against digest: %w", res.Name, handlerError(content, err))
+		return nil, fmt.Errorf("cannot verify resource %q against digest: %w", res.Name, err)
 	}
 
 	return verifying, nil

@@ -20,6 +20,7 @@ import (
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	v1 "ocm.software/open-component-model/bindings/go/github/spec/access/v1"
 	httpv1alpha1 "ocm.software/open-component-model/bindings/go/http/spec/config/v1alpha1"
+	resourceregistry "ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource"
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
@@ -210,6 +211,15 @@ func TestResourceRepository_DownloadResource(t *testing.T) {
 // with. Driving two different WithHTTPConfig values to two different request
 // counts fails if the option is dropped on the floor.
 func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
+	download := func(t *testing.T, res *descriptor.Resource) (blobpkg.ReadOnlyBlob, error) {
+		t.Helper()
+		r := require.New(t)
+		registry := resourceregistry.NewResourceRegistry(t.Context())
+		r.NoError(registry.RegisterInternalResourcePlugin(NewResourceRepository()))
+		plugin, err := registry.GetResourcePlugin(t.Context(), res.Access)
+		r.NoError(err)
+		return plugin.DownloadResource(t.Context(), res, nil)
+	}
 	// digestOf is the generic blob digest the archive GitHub serves would carry.
 	digestOf := func(payload []byte) *descriptor.Digest {
 		return &descriptor.Digest{
@@ -224,7 +234,7 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
 		res.Digest = digestOf(payload)
 
-		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
+		downloaded, err := download(t, res)
 		require.NoError(t, err)
 		assert.Equal(t, payload, readBlob(t, downloaded))
 	})
@@ -235,7 +245,7 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		res.Digest = digestOf([]byte("an archive GitHub never served"))
 
 		// Verification is streaming, so the download itself still succeeds.
-		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
+		downloaded, err := download(t, res)
 		require.NoError(t, err)
 
 		rc, err := downloaded.ReadCloser()
@@ -250,7 +260,7 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
 		res.Digest = nil
 
-		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
+		downloaded, err := download(t, res)
 		require.NoError(t, err)
 		assert.Equal(t, payload, readBlob(t, downloaded))
 	})
@@ -261,7 +271,7 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
 		res.Digest = digestOf([]byte("an archive GitHub never served"))
 
-		downloaded, err := NewResourceRepository().backend.FetchResource(t.Context(), res, nil)
+		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
 		r.NoError(err)
 		r.Equal(payload, readBlob(t, downloaded))
 

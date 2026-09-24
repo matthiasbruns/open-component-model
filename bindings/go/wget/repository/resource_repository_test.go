@@ -15,6 +15,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/blob"
 	filesystemv1alpha1 "ocm.software/open-component-model/bindings/go/configuration/filesystem/v1alpha1/spec"
 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
+	resourceregistry "ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource"
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/wget/repository"
 	v1 "ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
@@ -163,15 +164,20 @@ func TestDownloadResource_DigestVerification(t *testing.T) {
 	const served = "hello world"
 
 	// serve returns a repository and a resource for a server answering with body.
-	serve := func(t *testing.T, body string) (*repository.ResourceRepository, *descruntime.Resource) {
+	serve := func(t *testing.T, body string) (resourceregistry.Repository, *descruntime.Resource) {
 		t.Helper()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(body))
 		}))
 		t.Cleanup(server.Close)
 
-		return repository.NewResourceRepository(nil, repository.WithHTTPClient(server.Client())),
-			wgetResource(t, server.URL, map[string]any{"url": server.URL + "/resource"})
+		r := require.New(t)
+		res := wgetResource(t, server.URL, map[string]any{"url": server.URL + "/resource"})
+		registry := resourceregistry.NewResourceRegistry(t.Context())
+		r.NoError(registry.RegisterInternalResourcePlugin(repository.NewResourceRepository(nil, repository.WithHTTPClient(server.Client()))))
+		plugin, err := registry.GetResourcePlugin(t.Context(), res.Access)
+		r.NoError(err)
+		return plugin, res
 	}
 
 	t.Run("accepts content matching the resource digest", func(t *testing.T) {
@@ -240,6 +246,33 @@ func TestDownloadResource_DigestVerification(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported hash algorithm")
 	})
+}
+
+func TestDownloadResource_DoesNotVerifyDescriptorDigest(t *testing.T) {
+	r := require.New(t)
+	t.Parallel()
+
+	const content = "raw wget content"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(content))
+	}))
+	t.Cleanup(server.Close)
+
+	tempFolder := t.TempDir()
+	repo := repository.NewResourceRepository(&filesystemv1alpha1.Config{TempFolder: &tempFolder}, repository.WithHTTPClient(server.Client()))
+	res := wgetResource(t, server.URL, map[string]any{})
+	res.Digest = &descruntime.Digest{
+		HashAlgorithm:          "SHA-256",
+		NormalisationAlgorithm: "genericBlobDigest/v1",
+		Value:                  godigest.FromString("different content").Encoded(),
+	}
+
+	b, err := repo.DownloadResource(t.Context(), res, nil)
+	r.NoError(err)
+	r.Equal([]byte(content), readBlob(t, b))
+	closer, ok := b.(io.Closer)
+	r.True(ok)
+	r.NoError(closer.Close())
 }
 
 func TestUploadResource(t *testing.T) {

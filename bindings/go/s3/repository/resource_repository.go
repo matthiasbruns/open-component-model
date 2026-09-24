@@ -28,24 +28,11 @@ const (
 	genericBlobDigestV1 = "genericBlobDigest/v1"
 )
 
-var (
-	_ repository.ResourceRepository = (*ResourceRepository)(nil)
-	_ repository.ResourceBackend    = (*resourceBackend)(nil)
-)
+var _ repository.ResourceRepository = (*ResourceRepository)(nil)
 
 // ResourceRepository implements the ResourceRepository interface for the S3
-// access type. Downloads pass through the shared verification facade, while
-// digest processing uses the raw backend to compute and pin the object digest.
+// access type.
 type ResourceRepository struct {
-	verifiedRepository
-	backend *resourceBackend
-}
-
-type verifiedRepository interface {
-	repository.ResourceRepository
-}
-
-type resourceBackend struct {
 	maxDownloadSize  *int64
 	httpConfig       *httpv1alpha1.Config
 	httpClient       *http.Client
@@ -63,15 +50,11 @@ func NewResourceRepository(filesystemConfig *filesystemv1alpha1.Config, opts ...
 	for _, opt := range opts {
 		opt(options)
 	}
-	backend := &resourceBackend{
+	return &ResourceRepository{
 		maxDownloadSize:  options.MaxDownloadSize,
 		httpConfig:       options.HTTPConfig,
 		httpClient:       options.HTTPClient,
 		filesystemConfig: filesystemConfig,
-	}
-	return &ResourceRepository{
-		verifiedRepository: repository.NewVerifiedResourceRepository(backend),
-		backend:            backend,
 	}
 }
 
@@ -84,7 +67,7 @@ func (r *ResourceRepository) GetResourceRepositoryScheme() *runtime.Scheme {
 // for the given resource. It always carries the object path, and a hostname only for
 // a custom endpoint; see the package documentation of the s3 module for the full
 // matching rules.
-func (r *resourceBackend) GetResourceCredentialConsumerIdentity(ctx context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
+func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
 		return nil, err
@@ -93,13 +76,15 @@ func (r *resourceBackend) GetResourceCredentialConsumerIdentity(ctx context.Cont
 	return identityv1.IdentityFromObject(spec.BucketName, spec.ObjectKey, spec.Endpoint)
 }
 
-// FetchResource downloads a resource from the bucket/key described by the
+// DownloadResource downloads a resource from the bucket/key described by the
 // S3 access spec.
 //
 // The object is streamed into a file under the configured TempFolder, and the
 // returned blob reads from that file, which outlives this call and is owned by the
 // caller.
-func (r *resourceBackend) FetchResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
+//
+// Descriptor digest verification is applied by the resource plugin registry.
+func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
 		return nil, err
@@ -118,7 +103,7 @@ func (r *resourceBackend) FetchResource(ctx context.Context, resource *descripto
 	return result.Blob, nil
 }
 
-func (r *resourceBackend) convertAccess(resource *descriptor.Resource) (*v2.S3, error) {
+func (r *ResourceRepository) convertAccess(resource *descriptor.Resource) (*v2.S3, error) {
 	if resource == nil {
 		return nil, errors.New("resource is required")
 	}
@@ -139,7 +124,7 @@ func (r *resourceBackend) convertAccess(resource *descriptor.Resource) (*v2.S3, 
 
 // download streams the object described by spec into tempDir and returns it as a
 // file-backed blob. The file outlives this call and is owned by the caller.
-func (r *resourceBackend) download(ctx context.Context, spec *v2.S3, credentials runtime.Typed, tempDir string) (*download.Result, error) {
+func (r *ResourceRepository) download(ctx context.Context, spec *v2.S3, credentials runtime.Typed, tempDir string) (*download.Result, error) {
 	opts := []download.Option{
 		download.WithCredentials(credentials),
 		download.WithTempDir(tempDir),
@@ -168,7 +153,7 @@ func (r *resourceBackend) download(ctx context.Context, spec *v2.S3, credentials
 // UploadResource is not supported by the S3 access type, which is
 // download-only (matching ocmv1). It exists to satisfy the
 // [repository.ResourceRepository] interface and always returns an error.
-func (r *resourceBackend) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
+func (r *ResourceRepository) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
 	return nil, errors.New("uploading resources is not supported by the S3 access type")
 }
 
@@ -187,10 +172,6 @@ func (r *ResourceRepository) GetResourceDigestProcessorCredentialConsumerIdentit
 // After a successful digest, the access is pinned to the object version that was read;
 // unversioned objects remain unpinned.
 func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error) {
-	return r.backend.ProcessResourceDigest(ctx, resource, credentials)
-}
-
-func (r *resourceBackend) ProcessResourceDigest(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
 		return nil, err

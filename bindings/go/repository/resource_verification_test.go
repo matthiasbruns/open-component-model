@@ -2,8 +2,9 @@ package repository
 
 import (
 	"bytes"
-	"context"
+
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -13,26 +14,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/blob"
 	"ocm.software/open-component-model/bindings/go/blob/inmemory"
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
-	"ocm.software/open-component-model/bindings/go/runtime"
 )
-
-type resourceBackendStub struct {
-	fetch    func(context.Context, *descriptor.Resource, runtime.Typed) (blob.ReadOnlyBlob, error)
-	upload   func(context.Context, *descriptor.Resource, blob.ReadOnlyBlob, runtime.Typed) (*descriptor.Resource, error)
-	identity func(context.Context, *descriptor.Resource) (runtime.Identity, error)
-}
-
-func (b *resourceBackendStub) FetchResource(ctx context.Context, res *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
-	return b.fetch(ctx, res, credentials)
-}
-
-func (b *resourceBackendStub) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
-	return b.upload(ctx, res, content, credentials)
-}
-
-func (b *resourceBackendStub) GetResourceCredentialConsumerIdentity(ctx context.Context, res *descriptor.Resource) (runtime.Identity, error) {
-	return b.identity(ctx, res)
-}
 
 func downloadDigest(content string) *descriptor.Digest {
 	return &descriptor.Digest{
@@ -42,7 +24,7 @@ func downloadDigest(content string) *descriptor.Digest {
 	}
 }
 
-func TestResourceRepositoryDownloadVerification(t *testing.T) {
+func TestResourceVerifierVerification(t *testing.T) {
 	for _, policy := range []DownloadVerificationPolicy{VerifyIfPresent, RequireDigest} {
 		for _, tt := range []struct {
 			name          string
@@ -64,22 +46,10 @@ func TestResourceRepositoryDownloadVerification(t *testing.T) {
 				dig := downloadDigest(verifyContent)
 				dig.NormalisationAlgorithm = tt.normalization
 				res := resourceWithDigest(dig)
-				credentials := &runtime.Raw{}
-				calls := 0
-				backend := &resourceBackendStub{fetch: func(gotCtx context.Context, gotRes *descriptor.Resource, gotCredentials runtime.Typed) (blob.ReadOnlyBlob, error) {
-					calls++
-					r.Equal(ctx, gotCtx)
-					r.Same(res, gotRes)
-					r.Same(credentials, gotCredentials)
-					return inmemory.New(strings.NewReader(tt.content)), nil
-				}}
-				repo := NewVerifiedResourceRepository(backend)
-				if policy == RequireDigest {
-					repo = NewResourceRepositoryWithVerification(backend, policy)
-				}
-				content, err := repo.DownloadResource(ctx, res, credentials)
+				verifier, err := NewGenericResourceVerifierProvider(policy).GetResourceVerifier(ctx, res)
+				r.NoError(err)
+				content, err := verifier.Verify(ctx, inmemory.New(strings.NewReader(tt.content)))
 				r.NoError(err, "verification is deferred until content is consumed")
-				r.Equal(1, calls)
 				var dst bytes.Buffer
 				err = blob.Copy(&dst, content)
 				if tt.mismatch {
@@ -93,7 +63,7 @@ func TestResourceRepositoryDownloadVerification(t *testing.T) {
 	}
 }
 
-func TestResourceRepositoryRejectsBeforeFetch(t *testing.T) {
+func TestResourceVerifierProviderRejectsInvalidExpectations(t *testing.T) {
 	value := godigest.FromString(verifyContent).Encoded()
 	for _, tt := range []struct {
 		name    string
@@ -103,6 +73,7 @@ func TestResourceRepositoryRejectsBeforeFetch(t *testing.T) {
 	}{
 		{name: "nil resource", message: "resource is required"},
 		{name: "unknown policy", res: resourceWithDigest(downloadDigest(verifyContent)), policy: DownloadVerificationPolicy(255), message: "unsupported download verification policy"},
+		{name: "unknown policy without digest", res: resourceWithDigest(nil), policy: DownloadVerificationPolicy(255), message: "unsupported download verification policy"},
 		{name: "invalid hex", res: resourceWithDigest(&descriptor.Digest{HashAlgorithm: "SHA-256", Value: strings.Repeat("z", 64)}), message: "invalid digest"},
 		{name: "wrong length", res: resourceWithDigest(&descriptor.Digest{HashAlgorithm: "SHA-256", Value: "abcd"}), message: "invalid digest"},
 		{name: "missing value", res: resourceWithDigest(&descriptor.Digest{HashAlgorithm: "SHA-256"}), message: "incomplete digest"},
@@ -118,20 +89,14 @@ func TestResourceRepositoryRejectsBeforeFetch(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := require.New(t)
-			calls := 0
-			backend := &resourceBackendStub{fetch: func(context.Context, *descriptor.Resource, runtime.Typed) (blob.ReadOnlyBlob, error) {
-				calls++
-				return inmemory.New(strings.NewReader(verifyContent)), nil
-			}}
-			content, err := NewResourceRepositoryWithVerification(backend, tt.policy).DownloadResource(t.Context(), tt.res, nil)
+			verifier, err := NewGenericResourceVerifierProvider(tt.policy).GetResourceVerifier(t.Context(), tt.res)
 			r.ErrorContains(err, tt.message)
-			r.Nil(content)
-			r.Zero(calls, "invalid expectations must be rejected before transport is invoked")
+			r.Nil(verifier, "invalid expectations must be rejected before content is supplied")
 		})
 	}
 }
 
-func TestResourceRepositoryPermissiveMissingDigest(t *testing.T) {
+func TestResourceVerifierProviderPermissiveMissingDigest(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		digest *descriptor.Digest
@@ -142,16 +107,22 @@ func TestResourceRepositoryPermissiveMissingDigest(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := require.New(t)
+			var logs bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(previous) })
 			original := inmemory.New(strings.NewReader(verifyContent))
-			calls := 0
-			backend := &resourceBackendStub{fetch: func(context.Context, *descriptor.Resource, runtime.Typed) (blob.ReadOnlyBlob, error) {
-				calls++
-				return original, nil
-			}}
-			content, err := NewVerifiedResourceRepository(backend).DownloadResource(t.Context(), resourceWithDigest(tt.digest), nil)
+			res := resourceWithDigest(tt.digest)
+			verifier, err := NewGenericResourceVerifierProvider(VerifyIfPresent).GetResourceVerifier(t.Context(), res)
 			r.NoError(err)
-			r.Equal(1, calls)
+			r.Contains(logs.String(), "level=WARN")
+			r.Contains(logs.String(), "resource has no digest")
+			logs.Reset()
+			res.Digest = downloadDigest("later expectation")
+			content, err := verifier.Verify(t.Context(), original)
+			r.NoError(err)
 			r.Same(original, content, "unverified content must pass through unchanged")
+			r.Empty(logs.String(), "the warning belongs to provider selection, not verification")
 			var dst bytes.Buffer
 			r.NoError(blob.Copy(&dst, content))
 			r.Equal(verifyContent, dst.String())
@@ -159,7 +130,7 @@ func TestResourceRepositoryPermissiveMissingDigest(t *testing.T) {
 	}
 }
 
-func TestResourceRepositorySnapshotsExpectedDigest(t *testing.T) {
+func TestResourceVerifierProviderSnapshotsExpectedDigest(t *testing.T) {
 	for _, mutation := range []string{"modify value", "replace digest", "remove digest"} {
 		for _, matches := range []bool{true, false} {
 			name := mutation + " mismatch"
@@ -169,22 +140,21 @@ func TestResourceRepositorySnapshotsExpectedDigest(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				r := require.New(t)
 				res := resourceWithDigest(downloadDigest(verifyContent))
-				backend := &resourceBackendStub{fetch: func(_ context.Context, gotRes *descriptor.Resource, _ runtime.Typed) (blob.ReadOnlyBlob, error) {
-					switch mutation {
-					case "modify value":
-						gotRes.Digest.Value = godigest.FromString("backend content").Encoded()
-					case "replace digest":
-						gotRes.Digest = downloadDigest("backend content")
-					case "remove digest":
-						gotRes.Digest = nil
-					}
-					data := "backend content"
-					if matches {
-						data = verifyContent
-					}
-					return inmemory.New(strings.NewReader(data)), nil
-				}}
-				content, err := NewVerifiedResourceRepository(backend).DownloadResource(t.Context(), res, nil)
+				verifier, err := NewGenericResourceVerifierProvider(VerifyIfPresent).GetResourceVerifier(t.Context(), res)
+				r.NoError(err)
+				switch mutation {
+				case "modify value":
+					res.Digest.Value = godigest.FromString("backend content").Encoded()
+				case "replace digest":
+					res.Digest = downloadDigest("backend content")
+				case "remove digest":
+					res.Digest = nil
+				}
+				data := "backend content"
+				if matches {
+					data = verifyContent
+				}
+				content, err := verifier.Verify(t.Context(), inmemory.New(strings.NewReader(data)))
 				r.NoError(err)
 				var dst bytes.Buffer
 				err = blob.Copy(&dst, content)
@@ -199,78 +169,37 @@ func TestResourceRepositorySnapshotsExpectedDigest(t *testing.T) {
 	}
 }
 
-func TestResourceRepositoryBackendErrorsAndForwarding(t *testing.T) {
+type failingCloseBlob struct {
+	*closableBlob
+	closeErr error
+}
+
+func (b *failingCloseBlob) Close() error {
+	b.closed = true
+	return b.closeErr
+}
+
+func TestResourceVerifierWrapFailureCleanup(t *testing.T) {
 	for _, fails := range []bool{false, true} {
-		name := "success"
+		name := "successful cleanup"
 		if fails {
-			name = "backend error"
+			name = "failed cleanup"
 		}
 		t.Run(name, func(t *testing.T) {
 			r := require.New(t)
-			ctx := t.Context()
-			res := resourceWithDigest(downloadDigest(verifyContent))
-			credentials := &runtime.Raw{}
-			original := inmemory.New(strings.NewReader(verifyContent))
-			updated := resourceWithDigest(nil)
-			identity := runtime.Identity{"hostname": "example.org"}
-			var backendErr error
+			original := &failingCloseBlob{closableBlob: &closableBlob{Blob: inmemory.New(strings.NewReader(verifyContent))}}
 			if fails {
-				backendErr = errors.New("backend failed")
+				original.closeErr = errors.New("close failed")
 			}
-			fetchCalls, uploadCalls, identityCalls := 0, 0, 0
-			backend := &resourceBackendStub{
-				fetch: func(gotCtx context.Context, gotRes *descriptor.Resource, gotCredentials runtime.Typed) (blob.ReadOnlyBlob, error) {
-					fetchCalls++
-					r.Equal(ctx, gotCtx)
-					r.Same(res, gotRes)
-					r.Same(credentials, gotCredentials)
-					if backendErr != nil {
-						return nil, backendErr
-					}
-					return original, nil
-				},
-				upload: func(gotCtx context.Context, gotRes *descriptor.Resource, gotContent blob.ReadOnlyBlob, gotCredentials runtime.Typed) (*descriptor.Resource, error) {
-					uploadCalls++
-					r.Equal(ctx, gotCtx)
-					r.Same(res, gotRes)
-					r.Same(original, gotContent)
-					r.Same(credentials, gotCredentials)
-					return updated, backendErr
-				},
-				identity: func(gotCtx context.Context, gotRes *descriptor.Resource) (runtime.Identity, error) {
-					identityCalls++
-					r.Equal(ctx, gotCtx)
-					r.Same(res, gotRes)
-					return identity, backendErr
-				},
-			}
-			repo := NewVerifiedResourceRepository(backend)
-			content, err := repo.DownloadResource(ctx, res, credentials)
+			// Provider validation prevents this, but wrapping failures must still release content.
+			verifier := &genericResourceVerifier{expected: "sha256:invalid"}
+			content, err := verifier.Verify(t.Context(), original)
+			r.ErrorContains(err, "invalid expected digest")
+			r.Nil(content)
+			r.True(original.closed)
 			if fails {
-				r.ErrorIs(err, backendErr)
-				r.Nil(content)
-			} else {
-				r.NoError(err)
-				var dst bytes.Buffer
-				r.NoError(blob.Copy(&dst, content))
+				r.ErrorIs(err, original.closeErr)
 			}
-			gotRes, err := repo.UploadResource(ctx, res, original, credentials)
-			r.Same(updated, gotRes)
-			if fails {
-				r.ErrorIs(err, backendErr)
-			} else {
-				r.NoError(err)
-			}
-			gotIdentity, err := repo.GetResourceCredentialConsumerIdentity(ctx, res)
-			r.Equal(identity, gotIdentity)
-			if fails {
-				r.ErrorIs(err, backendErr)
-			} else {
-				r.NoError(err)
-			}
-			r.Equal(1, fetchCalls)
-			r.Equal(1, uploadCalls)
-			r.Equal(1, identityCalls)
 		})
 	}
 }
