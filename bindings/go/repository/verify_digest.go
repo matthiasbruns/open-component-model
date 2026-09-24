@@ -23,6 +23,10 @@ func parseDigest(d *descriptor.Digest) (digest.Digest, error) {
 	if strings.EqualFold(d.HashAlgorithm, descriptor.NoDigest) || strings.EqualFold(d.NormalisationAlgorithm, descriptor.ExcludeFromSignature) {
 		return "", nil
 	}
+	// Empty normalization is accepted for legacy generic-blob descriptors only.
+	if d.NormalisationAlgorithm != "" && !strings.EqualFold(d.NormalisationAlgorithm, "genericBlobDigest/v1") {
+		return "", fmt.Errorf("unsupported normalisation algorithm %q", d.NormalisationAlgorithm)
+	}
 	if d.Value == "" && d.HashAlgorithm == "" {
 		return "", nil
 	}

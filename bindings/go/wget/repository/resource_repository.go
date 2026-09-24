@@ -15,7 +15,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/wget/internal/download"
 	accessspec "ocm.software/open-component-model/bindings/go/wget/spec/access"
-	"ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
+	v1 "ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
 	identityv1 "ocm.software/open-component-model/bindings/go/wget/spec/identity/v1"
 )
 
@@ -26,10 +26,24 @@ const (
 	genericBlobDigestV1 = "genericBlobDigest/v1"
 )
 
-var _ repository.ResourceRepository = (*ResourceRepository)(nil)
+var (
+	_ repository.ResourceRepository = (*ResourceRepository)(nil)
+	_ repository.ResourceBackend    = (*resourceBackend)(nil)
+)
 
 // ResourceRepository implements the ResourceRepository interface for wget access types.
+// Downloads pass through the shared verification facade, while digest processing
+// uses the raw backend.
 type ResourceRepository struct {
+	verifiedRepository
+	backend *resourceBackend
+}
+
+type verifiedRepository interface {
+	repository.ResourceRepository
+}
+
+type resourceBackend struct {
 	client           *http.Client
 	maxDownloadSize  int64
 	filesystemConfig *filesystemv1alpha1.Config
@@ -56,10 +70,14 @@ func NewResourceRepository(filesystemConfig *filesystemv1alpha1.Config, opts ...
 	} else {
 		maxSize = DefaultMaxDownloadSize
 	}
-	return &ResourceRepository{
+	backend := &resourceBackend{
 		client:           client,
 		maxDownloadSize:  maxSize,
 		filesystemConfig: filesystemConfig,
+	}
+	return &ResourceRepository{
+		verifiedRepository: repository.NewVerifiedResourceRepository(backend),
+		backend:            backend,
 	}
 }
 
@@ -69,7 +87,7 @@ func (r *ResourceRepository) GetResourceRepositoryScheme() *runtime.Scheme {
 }
 
 // GetResourceCredentialConsumerIdentity resolves the credential consumer identity for the given resource.
-func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
+func (r *resourceBackend) GetResourceCredentialConsumerIdentity(ctx context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource is required")
 	}
@@ -78,7 +96,7 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.C
 	}
 
 	wget := v1.Wget{}
-	if err := r.GetResourceRepositoryScheme().Convert(resource.Access, &wget); err != nil {
+	if err := accessspec.Scheme.Convert(resource.Access, &wget); err != nil {
 		return nil, fmt.Errorf("error converting resource access spec: %w", err)
 	}
 
@@ -94,22 +112,22 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.C
 	return identity, nil
 }
 
-// DownloadResource downloads a resource from the URL specified in the wget access spec.
+// FetchResource downloads a resource from the URL specified in the wget access spec.
 // The returned blob is backed by a file under the configured temp folder that outlives
 // this call. The blob owns that file: callers should close it (it implements
 // io.Closer) once they are done, and an unclosed blob has its file removed when it
 // becomes unreachable.
-func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
+func (r *resourceBackend) FetchResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
 	b, err := r.download(ctx, resource, credentials)
 	if err != nil {
 		return nil, err
 	}
-	return repository.VerifyDownload(ctx, resource, b)
+	return b, nil
 }
 
 // download streams the resource body into the configured temp folder and returns it
 // as a file-backed blob owning that file.
-func (r *ResourceRepository) download(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*download.Blob, error) {
+func (r *resourceBackend) download(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*download.Blob, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource is required")
 	}
@@ -143,7 +161,7 @@ func (r *ResourceRepository) download(ctx context.Context, resource *descriptor.
 }
 
 // UploadResource is not supported for wget access types.
-func (r *ResourceRepository) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
+func (r *resourceBackend) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
 	return nil, fmt.Errorf("upload is not supported for wget access type")
 }
 
@@ -157,6 +175,10 @@ func (r *ResourceRepository) GetResourceDigestProcessorCredentialConsumerIdentit
 // ProcessResourceDigest computes the digest of a wget resource by downloading the referenced
 // content and hashing it. When the resource already carries a digest, the computed value is verified against it.
 func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error) {
+	return r.backend.ProcessResourceDigest(ctx, resource, credentials)
+}
+
+func (r *resourceBackend) ProcessResourceDigest(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error) {
 	data, err := r.download(ctx, resource, credentials)
 	if err != nil {
 		return nil, fmt.Errorf("error downloading resource for digest processing: %w", err)

@@ -16,9 +16,9 @@ import (
 // It uses an io.TeeReader to read the data while simultaneously verifying the digest. If the verification fails,
 // an error is returned indicating the failure.
 //
-// Depending on whether the size is known, the function either uses io.CopyN to copy a specific number of bytes
-// or io.Copy to copy all available data. Thus, if the data is SizeAware, no buffering is necessary, reducing
-// allocations and improving performance.
+// When the size is known, Copy copies exactly that many bytes and then checks for EOF.
+// Trailing content is rejected without being written to dst. When the size is unknown,
+// Copy copies all available data.
 //
 // Parameters:
 // - dst: The destination io.Writer where the blob's contents will be copied.
@@ -61,6 +61,17 @@ func Copy(dst io.Writer, src ReadOnlyBlob) (err error) {
 
 	if size > SizeUnknown {
 		_, err = io.CopyN(dst, reader, size)
+		if err == nil {
+			// CopyN stops at size without necessarily observing EOF, which streaming
+			// verifiers need to distinguish complete content from an incomplete read.
+			var extra [1]byte
+			n, readErr := io.ReadFull(reader, extra[:])
+			if n > 0 {
+				err = errors.New("blob size mismatch: trailing content")
+			} else if readErr != io.EOF {
+				err = readErr
+			}
+		}
 	} else {
 		_, err = io.Copy(dst, reader)
 	}

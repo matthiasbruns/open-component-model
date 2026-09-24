@@ -22,7 +22,19 @@ import (
 // ResourceRepository implements a resource repository for GitHub repositories.
 // It downloads the source archive of a pinned commit via the GitHub REST API,
 // serving the exact tarball GitHub does, so content and digest match old OCM.
+// Downloads pass through the shared verification facade; ResolveCommit remains
+// available for digest processing.
 type ResourceRepository struct {
+	verifiedRepository
+	backend *resourceBackend
+}
+
+type verifiedRepository interface {
+	repository.ResourceRepository
+}
+
+// resourceBackend fetches archives without applying descriptor digest verification.
+type resourceBackend struct {
 	httpConfig *httpv1alpha1.Config
 	httpClient *http.Client
 }
@@ -35,7 +47,7 @@ type Option func(*ResourceRepository)
 // (retries on 408, 429 and 5xx, plus transport timeouts).
 func WithHTTPConfig(cfg *httpv1alpha1.Config) Option {
 	return func(r *ResourceRepository) {
-		r.httpConfig = cfg
+		r.backend.httpConfig = cfg
 	}
 }
 
@@ -45,24 +57,28 @@ func WithHTTPConfig(cfg *httpv1alpha1.Config) Option {
 // defaults unless it was built with them.
 func WithHTTPClient(client *http.Client) Option {
 	return func(r *ResourceRepository) {
-		r.httpClient = client
+		r.backend.httpClient = client
 	}
 }
 
-var _ repository.ResourceRepository = (*ResourceRepository)(nil)
+var (
+	_ repository.ResourceRepository = (*ResourceRepository)(nil)
+	_ repository.ResourceBackend    = (*resourceBackend)(nil)
+)
 
 // NewResourceRepository creates a ResourceRepository. Downloaded archives are
 // buffered in memory (see download.Download), so no filesystem configuration
 // is needed. The HTTP client is built once, so its connection pool is reused
 // across downloads.
 func NewResourceRepository(opts ...Option) *ResourceRepository {
-	r := &ResourceRepository{}
+	r := &ResourceRepository{backend: &resourceBackend{}}
 	for _, opt := range opts {
 		opt(r)
 	}
-	if r.httpClient == nil {
-		r.httpClient = ocmhttp.New(ocmhttp.WithConfig(r.httpConfig))
+	if r.backend.httpClient == nil {
+		r.backend.httpClient = ocmhttp.New(ocmhttp.WithConfig(r.backend.httpConfig))
 	}
+	r.verifiedRepository = repository.NewVerifiedResourceRepository(r.backend)
 	return r
 }
 
@@ -70,6 +86,10 @@ func NewResourceRepository(opts ...Option) *ResourceRepository {
 // at, using this repository's HTTP client. The digest processor uses it to pin a
 // ref-only access before downloading. Nil credentials resolve anonymously.
 func (r *ResourceRepository) ResolveCommit(ctx context.Context, gitHub *v1.GitHub, credentials *credsv1.GitHubCredentials) (string, error) {
+	return r.backend.ResolveCommit(ctx, gitHub, credentials)
+}
+
+func (r *resourceBackend) ResolveCommit(ctx context.Context, gitHub *v1.GitHub, credentials *credsv1.GitHubCredentials) (string, error) {
 	return download.ResolveCommit(ctx, gitHub, credentials, r.httpClient)
 }
 
@@ -81,7 +101,7 @@ func (r *ResourceRepository) GetResourceRepositoryScheme() *runtime.Scheme {
 
 // GetResourceCredentialConsumerIdentity resolves the credential consumer
 // identity (type GitHubRepository) for the given GitHub resource.
-func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(_ context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
+func (r *resourceBackend) GetResourceCredentialConsumerIdentity(_ context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
 	gitHub, err := githubinternal.AccessFrom(resource.Access)
 	if err != nil {
 		return nil, err
@@ -90,7 +110,7 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(_ context.Con
 	return githubinternal.CredentialConsumerIdentity(gitHub.RepoURL)
 }
 
-// DownloadResource fetches the archive of the commit pinned in the resource's
+// FetchResource fetches the archive of the commit pinned in the resource's
 // GitHub access as a gzipped tar blob (application/x-tgz). A ref-only access is
 // resolved to the commit the ref points at now, so the download is a snapshot;
 // the digest processor is what pins it for reproducibility. When both are set the
@@ -99,10 +119,7 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(_ context.Con
 //
 // The blob is buffered eagerly in memory and can be read any number of times;
 // it needs no cleanup and holds the whole archive until released.
-//
-// The archive is compared to the digest the resource declares, which is the generic
-// blob digest, so an archive that differs fails the read.
-func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
+func (r *resourceBackend) FetchResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
 	gitHub, err := githubinternal.AccessFrom(resource.Access)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving GitHub access for download: %w", err)
@@ -133,16 +150,11 @@ func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *des
 		}
 	}
 
-	archive, err := download.Download(ctx, gitHub, gitHubCredentials, r.httpClient)
-	if err != nil {
-		return nil, err
-	}
-
-	return repository.VerifyDownload(ctx, resource, archive)
+	return download.Download(ctx, gitHub, gitHubCredentials, r.httpClient)
 }
 
 // UploadResource is not supported: the GitHub access type is a read-only
 // reference; content reaches GitHub through git, not through OCM.
-func (r *ResourceRepository) UploadResource(_ context.Context, _ *descriptor.Resource, _ blob.ReadOnlyBlob, _ runtime.Typed) (*descriptor.Resource, error) {
+func (r *resourceBackend) UploadResource(_ context.Context, _ *descriptor.Resource, _ blob.ReadOnlyBlob, _ runtime.Typed) (*descriptor.Resource, error) {
 	return nil, fmt.Errorf("github repositories do not support upload operations")
 }

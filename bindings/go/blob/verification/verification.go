@@ -1,4 +1,6 @@
-package repository
+// Package verification provides streaming verification of blob content against an
+// independently supplied digest.
+package verification
 
 import (
 	"errors"
@@ -10,18 +12,6 @@ import (
 	"ocm.software/open-component-model/bindings/go/blob"
 )
 
-// verifyingBlob wraps a blob.ReadOnlyBlob with the digest its content is expected
-// to have.
-//
-// This exists because filesystem.Blob computes its own digest so verification
-// happens against itself that always passes. A verifyingBlob verifies against
-// an independent source, which is the component descriptor.
-//
-// Every reader returned by ReadCloser verifies independently: it errors when the
-// content hashes to something else, and when it is only read in part.
-//
-// Verification is streaming, meaning, the target will already been downloaded by the
-// time Verification throws an error. It has to be removed by the caller if that happens.
 type verifyingBlob struct {
 	base     blob.ReadOnlyBlob
 	expected digest.Digest
@@ -36,10 +26,15 @@ var (
 	_ io.Closer                  = (*verifyingBlob)(nil)
 )
 
-// newVerifyingBlob returns base wrapped so that its content is compared to `expected`.
+// Wrap returns base wrapped so that every reader independently verifies its content
+// against expected. It fails if expected is invalid or its algorithm is unavailable.
+// Readers must reach EOF; closing an incomplete reader returns an error even if the
+// bytes read match expected. Digest mismatches are reported by both Read and Close.
 //
-// It fails if expected is not a digest of an algorithm available at runtime.
-func newVerifyingBlob(base blob.ReadOnlyBlob, expected digest.Digest) (*verifyingBlob, error) {
+// Verification is streaming: callers must discard any output on failure. Metadata
+// and blob-level Close are forwarded to base; Digest reports the underlying blob's
+// digest, not expected.
+func Wrap(base blob.ReadOnlyBlob, expected digest.Digest) (blob.ReadOnlyBlob, error) {
 	if err := expected.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid expected digest %q: %w", expected, err)
 	}
@@ -51,9 +46,8 @@ func newVerifyingBlob(base blob.ReadOnlyBlob, expected digest.Digest) (*verifyin
 }
 
 // ReadCloser returns a reader over the content that verifies it against the
-// expected digest. The mismatch surfaces from Read once the content ends, and
-// from Close in any case, so a caller that only checks one of the two still gets
-// verified.
+// expected digest. A complete read reports mismatches; Close also reports
+// mismatches and incomplete reads.
 func (b *verifyingBlob) ReadCloser() (io.ReadCloser, error) {
 	rc, err := b.base.ReadCloser()
 	if err != nil {
@@ -119,10 +113,8 @@ type verifyingReadCloser struct {
 	eof      bool
 }
 
-// Read is a tee reader implementation that will not only error on Close but
-// also during Read! Since this a sensitive operation, forgetting to check a Close
-// error like _ = x.Close() MUST not be left as a possible loophole for skipping
-// verification.
+// Read reports mismatches at EOF so consumers that read the entire stream do
+// not depend on checking Close to detect corrupted content.
 func (v *verifyingReadCloser) Read(p []byte) (int, error) {
 	n, err := v.base.Read(p)
 	if n > 0 {

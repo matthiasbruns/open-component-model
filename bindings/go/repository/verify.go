@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"ocm.software/open-component-model/bindings/go/blob"
+	"ocm.software/open-component-model/bindings/go/blob/verification"
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 )
 
@@ -27,7 +28,7 @@ func VerifyDownload(ctx context.Context, res *descriptor.Resource, content blob.
 		return content, nil
 	}
 
-	verifying, err := newVerifyingBlob(content, expected)
+	verifying, err := verification.Wrap(content, expected)
 	if err != nil {
 		return nil, fmt.Errorf("cannot verify resource %q against digest: %w", res.Name, handlerError(content, err))
 	}

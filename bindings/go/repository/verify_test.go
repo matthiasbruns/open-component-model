@@ -14,6 +14,16 @@ import (
 
 const verifyContent = "content the descriptor took a digest over"
 
+type closableBlob struct {
+	*inmemory.Blob
+	closed bool
+}
+
+func (b *closableBlob) Close() error {
+	b.closed = true
+	return nil
+}
+
 func resourceWithDigest(dig *descriptor.Digest) *descriptor.Resource {
 	res := &descriptor.Resource{}
 	res.Name = "test-resource"

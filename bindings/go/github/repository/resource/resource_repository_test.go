@@ -255,16 +255,15 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		assert.Equal(t, payload, readBlob(t, downloaded))
 	})
 
-	t.Run("the digest processor reads the archive digest without tripping verification", func(t *testing.T) {
+	t.Run("the backend fetches raw content without descriptor verification", func(t *testing.T) {
+		r := require.New(t)
 		baseURL, payload := mockGitHub(t)
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
 		res.Digest = digestOf([]byte("an archive GitHub never served"))
 
-		// The digest is taken from the blob, which reports what it holds rather than
-		// what the resource claims, so establishing a digest never reads through the
-		// verifying reader. This is what replaced a download-by-access method.
-		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
-		require.NoError(t, err)
+		downloaded, err := NewResourceRepository().backend.FetchResource(t.Context(), res, nil)
+		r.NoError(err)
+		r.Equal(payload, readBlob(t, downloaded))
 
 		aware, ok := downloaded.(blobpkg.DigestAware)
 		require.True(t, ok)

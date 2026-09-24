@@ -19,7 +19,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/s3/internal/download"
 	accessspec "ocm.software/open-component-model/bindings/go/s3/spec/access"
-	"ocm.software/open-component-model/bindings/go/s3/spec/access/v2"
+	v2 "ocm.software/open-component-model/bindings/go/s3/spec/access/v2"
 	identityv1 "ocm.software/open-component-model/bindings/go/s3/spec/identity/v1"
 )
 
@@ -28,11 +28,24 @@ const (
 	genericBlobDigestV1 = "genericBlobDigest/v1"
 )
 
-var _ repository.ResourceRepository = (*ResourceRepository)(nil)
+var (
+	_ repository.ResourceRepository = (*ResourceRepository)(nil)
+	_ repository.ResourceBackend    = (*resourceBackend)(nil)
+)
 
 // ResourceRepository implements the ResourceRepository interface for the S3
-// access type.
+// access type. Downloads pass through the shared verification facade, while
+// digest processing uses the raw backend to compute and pin the object digest.
 type ResourceRepository struct {
+	verifiedRepository
+	backend *resourceBackend
+}
+
+type verifiedRepository interface {
+	repository.ResourceRepository
+}
+
+type resourceBackend struct {
 	maxDownloadSize  *int64
 	httpConfig       *httpv1alpha1.Config
 	httpClient       *http.Client
@@ -50,11 +63,15 @@ func NewResourceRepository(filesystemConfig *filesystemv1alpha1.Config, opts ...
 	for _, opt := range opts {
 		opt(options)
 	}
-	return &ResourceRepository{
+	backend := &resourceBackend{
 		maxDownloadSize:  options.MaxDownloadSize,
 		httpConfig:       options.HTTPConfig,
 		httpClient:       options.HTTPClient,
 		filesystemConfig: filesystemConfig,
+	}
+	return &ResourceRepository{
+		verifiedRepository: repository.NewVerifiedResourceRepository(backend),
+		backend:            backend,
 	}
 }
 
@@ -67,7 +84,7 @@ func (r *ResourceRepository) GetResourceRepositoryScheme() *runtime.Scheme {
 // for the given resource. It always carries the object path, and a hostname only for
 // a custom endpoint; see the package documentation of the s3 module for the full
 // matching rules.
-func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
+func (r *resourceBackend) GetResourceCredentialConsumerIdentity(ctx context.Context, resource *descriptor.Resource) (runtime.Identity, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
 		return nil, err
@@ -76,16 +93,13 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.C
 	return identityv1.IdentityFromObject(spec.BucketName, spec.ObjectKey, spec.Endpoint)
 }
 
-// DownloadResource downloads a resource from the bucket/key described by the
+// FetchResource downloads a resource from the bucket/key described by the
 // S3 access spec.
 //
 // The object is streamed into a file under the configured TempFolder, and the
 // returned blob reads from that file, which outlives this call and is owned by the
 // caller.
-//
-// The content is held to the digest the resource declares, which is the digest over
-// exactly these bytes, so a store serving something else fails the read.
-func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
+func (r *resourceBackend) FetchResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
 		return nil, err
@@ -101,10 +115,10 @@ func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *des
 		return nil, err
 	}
 
-	return repository.VerifyDownload(ctx, resource, result.Blob)
+	return result.Blob, nil
 }
 
-func (r *ResourceRepository) convertAccess(resource *descriptor.Resource) (*v2.S3, error) {
+func (r *resourceBackend) convertAccess(resource *descriptor.Resource) (*v2.S3, error) {
 	if resource == nil {
 		return nil, errors.New("resource is required")
 	}
@@ -125,7 +139,7 @@ func (r *ResourceRepository) convertAccess(resource *descriptor.Resource) (*v2.S
 
 // download streams the object described by spec into tempDir and returns it as a
 // file-backed blob. The file outlives this call and is owned by the caller.
-func (r *ResourceRepository) download(ctx context.Context, spec *v2.S3, credentials runtime.Typed, tempDir string) (*download.Result, error) {
+func (r *resourceBackend) download(ctx context.Context, spec *v2.S3, credentials runtime.Typed, tempDir string) (*download.Result, error) {
 	opts := []download.Option{
 		download.WithCredentials(credentials),
 		download.WithTempDir(tempDir),
@@ -154,7 +168,7 @@ func (r *ResourceRepository) download(ctx context.Context, spec *v2.S3, credenti
 // UploadResource is not supported by the S3 access type, which is
 // download-only (matching ocmv1). It exists to satisfy the
 // [repository.ResourceRepository] interface and always returns an error.
-func (r *ResourceRepository) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
+func (r *resourceBackend) UploadResource(ctx context.Context, res *descriptor.Resource, content blob.ReadOnlyBlob, credentials runtime.Typed) (*descriptor.Resource, error) {
 	return nil, errors.New("uploading resources is not supported by the S3 access type")
 }
 
@@ -171,8 +185,12 @@ func (r *ResourceRepository) GetResourceDigestProcessorCredentialConsumerIdentit
 // the computed value is verified against it.
 //
 // After a successful digest, the access is pinned to the object version that was read;
-// see [ResourceRepository.pinAccess].
+// unversioned objects remain unpinned.
 func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error) {
+	return r.backend.ProcessResourceDigest(ctx, resource, credentials)
+}
+
+func (r *resourceBackend) ProcessResourceDigest(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
 		return nil, err
