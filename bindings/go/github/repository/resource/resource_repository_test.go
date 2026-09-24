@@ -20,6 +20,8 @@ import (
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	v1 "ocm.software/open-component-model/bindings/go/github/spec/access/v1"
 	httpv1alpha1 "ocm.software/open-component-model/bindings/go/http/spec/config/v1alpha1"
+	resourceregistry "ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource"
+	"ocm.software/open-component-model/bindings/go/repository/verify"
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
@@ -210,6 +212,18 @@ func TestResourceRepository_DownloadResource(t *testing.T) {
 // with. Driving two different WithHTTPConfig values to two different request
 // counts fails if the option is dropped on the floor.
 func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
+	download := func(t *testing.T, res *descriptor.Resource) (blobpkg.ReadOnlyBlob, error) {
+		t.Helper()
+		r := require.New(t)
+		registry := resourceregistry.NewResourceRegistry(t.Context())
+		registry.SetRepositoryDecorator(func(base resourceregistry.Repository) resourceregistry.Repository {
+			return verify.NewResourceRepository(base)
+		})
+		r.NoError(registry.RegisterInternalResourcePlugin(NewResourceRepository()))
+		plugin, err := registry.GetResourcePlugin(t.Context(), res.Access)
+		r.NoError(err)
+		return plugin.DownloadResource(t.Context(), res, nil)
+	}
 	// digestOf is the generic blob digest the archive GitHub serves would carry.
 	digestOf := func(payload []byte) *descriptor.Digest {
 		return &descriptor.Digest{
@@ -224,7 +238,7 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
 		res.Digest = digestOf(payload)
 
-		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
+		downloaded, err := download(t, res)
 		require.NoError(t, err)
 		assert.Equal(t, payload, readBlob(t, downloaded))
 	})
@@ -235,7 +249,7 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		res.Digest = digestOf([]byte("an archive GitHub never served"))
 
 		// Verification is streaming, so the download itself still succeeds.
-		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
+		downloaded, err := download(t, res)
 		require.NoError(t, err)
 
 		rc, err := downloaded.ReadCloser()
@@ -250,21 +264,20 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
 		res.Digest = nil
 
-		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
+		downloaded, err := download(t, res)
 		require.NoError(t, err)
 		assert.Equal(t, payload, readBlob(t, downloaded))
 	})
 
-	t.Run("the digest processor reads the archive digest without tripping verification", func(t *testing.T) {
+	t.Run("the backend fetches raw content without descriptor verification", func(t *testing.T) {
+		r := require.New(t)
 		baseURL, payload := mockGitHub(t)
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
 		res.Digest = digestOf([]byte("an archive GitHub never served"))
 
-		// The digest is taken from the blob, which reports what it holds rather than
-		// what the resource claims, so establishing a digest never reads through the
-		// verifying reader. This is what replaced a download-by-access method.
 		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
-		require.NoError(t, err)
+		r.NoError(err)
+		r.Equal(payload, readBlob(t, downloaded))
 
 		aware, ok := downloaded.(blobpkg.DigestAware)
 		require.True(t, ok)

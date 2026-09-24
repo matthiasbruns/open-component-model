@@ -21,9 +21,14 @@ import (
 	helmresource "ocm.software/open-component-model/bindings/go/helm/repository/resource"
 	httpv1alpha1 "ocm.software/open-component-model/bindings/go/http/spec/config/v1alpha1"
 	"ocm.software/open-component-model/bindings/go/plugin/manager"
+	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource"
+	"ocm.software/open-component-model/bindings/go/repository/verify"
 )
 
 func Register(manager *manager.PluginManager, filesystemConfig *filesystemv1alpha1.Config, httpConfig *httpv1alpha1.Config, logger *slog.Logger) error {
+	manager.ResourcePluginRegistry.SetRepositoryDecorator(func(base resource.Repository) resource.Repository {
+		return verify.NewResourceRepository(base)
+	})
 	if err := ocicredentialplugin.Register(manager.CredentialRepositoryRegistry); err != nil {
 		return fmt.Errorf("could not register OCI inbuilt credential plugin: %w", err)
 	}

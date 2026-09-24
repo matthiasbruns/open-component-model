@@ -100,8 +100,7 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(_ context.Con
 // The blob is buffered eagerly in memory and can be read any number of times;
 // it needs no cleanup and holds the whole archive until released.
 //
-// The archive is compared to the digest the resource declares, which is the generic
-// blob digest, so an archive that differs fails the read.
+// Descriptor digest verification is applied by the resource plugin registry.
 func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
 	gitHub, err := githubinternal.AccessFrom(resource.Access)
 	if err != nil {
@@ -133,12 +132,7 @@ func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *des
 		}
 	}
 
-	archive, err := download.Download(ctx, gitHub, gitHubCredentials, r.httpClient)
-	if err != nil {
-		return nil, err
-	}
-
-	return repository.VerifyDownload(ctx, resource, archive)
+	return download.Download(ctx, gitHub, gitHubCredentials, r.httpClient)
 }
 
 // UploadResource is not supported: the GitHub access type is a read-only

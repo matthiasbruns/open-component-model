@@ -64,6 +64,47 @@ func (e *errorReader) Read(p []byte) (n int, err error) {
 	return 0, errors.New("mock read error")
 }
 
+func TestCopy_KnownSize(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		content string
+		size    int64
+		want    string
+		err     string
+	}{
+		{name: "matching", content: "test data", size: 9, want: "test data"},
+		{name: "empty", size: 0},
+		{name: "trailing", content: "test data extra", size: 9, want: "test data", err: "trailing content"},
+		{name: "trailing after empty", content: "extra", size: 0, err: "trailing content"},
+		{name: "incomplete", content: "test", size: 9, want: "test", err: "EOF"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			src := new(MockReadOnlyBlob)
+			src.On("Size").Return(tt.size)
+			src.On("Digest").Return("", false)
+			src.On("ReadCloser").Return(io.NopCloser(bytes.NewBufferString(tt.content)), nil)
+			var dst bytes.Buffer
+			err := blob.Copy(&dst, src)
+			if tt.err != "" {
+				r.ErrorContains(err, tt.err)
+			} else {
+				r.NoError(err)
+			}
+			r.Equal(tt.want, dst.String())
+		})
+	}
+}
+
+func TestCopy_KnownSizePreservesErrorAfterContent(t *testing.T) {
+	r := require.New(t)
+	src := new(MockReadOnlyBlob)
+	src.On("Size").Return(int64(4))
+	src.On("Digest").Return("", false)
+	src.On("ReadCloser").Return(io.NopCloser(io.MultiReader(bytes.NewBufferString("test"), &errorReader{})), nil)
+	r.ErrorContains(blob.Copy(io.Discard, src), "mock read error")
+}
+
 // MockReadOnlyBlob is a mock implementation of ReadOnlyBlob
 type MockReadOnlyBlob struct {
 	mock.Mock

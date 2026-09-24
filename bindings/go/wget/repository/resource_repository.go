@@ -15,7 +15,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/wget/internal/download"
 	accessspec "ocm.software/open-component-model/bindings/go/wget/spec/access"
-	"ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
+	v1 "ocm.software/open-component-model/bindings/go/wget/spec/access/v1"
 	identityv1 "ocm.software/open-component-model/bindings/go/wget/spec/identity/v1"
 )
 
@@ -99,12 +99,13 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.C
 // this call. The blob owns that file: callers should close it (it implements
 // io.Closer) once they are done, and an unclosed blob has its file removed when it
 // becomes unreachable.
+// Descriptor digest verification is applied by the resource plugin registry.
 func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
 	b, err := r.download(ctx, resource, credentials)
 	if err != nil {
 		return nil, err
 	}
-	return repository.VerifyDownload(ctx, resource, b)
+	return b, nil
 }
 
 // download streams the resource body into the configured temp folder and returns it

@@ -121,8 +121,7 @@ func (p *DigestProcessor) ProcessResourceDigest(
 	//
 	// Checked before the download: neither comparison needs the archive, and a
 	// digest pinned to another algorithm can never match what is computed here,
-	// so fetching it would be a guaranteed waste. It also keeps such a digest from
-	// reaching the verifying blob, which would refuse to be built over it.
+	// so fetching it would be a guaranteed waste.
 	if res.Digest != nil {
 		if res.Digest.HashAlgorithm != "" && !strings.EqualFold(res.Digest.HashAlgorithm, hashAlgorithmSHA256) {
 			return nil, fmt.Errorf("hash algorithm mismatch: expected %s, got %s", hashAlgorithmSHA256, res.Digest.HashAlgorithm)
@@ -138,9 +137,9 @@ func (p *DigestProcessor) ProcessResourceDigest(
 	slog.WarnContext(ctx, "computing the digest of a github resource downloads the full commit archive and discards it after hashing",
 		"repoUrl", gitHub.RepoURL, "commit", gitHub.Commit)
 
-	// Downloaded by resource, and never read through the verifying reader: the digest
-	// is taken from the blob itself, which reports what it holds rather than what the
-	// resource claims. So nothing here is checked against the digest being computed.
+	// Digest establishment uses the transport directly, below the plugin registry's
+	// verification facade. The blob reports the fetched archive's digest, which we
+	// compare with any supplied expectation below.
 	downloaded, err := p.resourceRepository.DownloadResource(ctx, dlResource, credentials)
 	if err != nil {
 		return nil, fmt.Errorf("error downloading github resource for digest processing: %w", err)

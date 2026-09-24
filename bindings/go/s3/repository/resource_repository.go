@@ -19,7 +19,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/runtime"
 	"ocm.software/open-component-model/bindings/go/s3/internal/download"
 	accessspec "ocm.software/open-component-model/bindings/go/s3/spec/access"
-	"ocm.software/open-component-model/bindings/go/s3/spec/access/v2"
+	v2 "ocm.software/open-component-model/bindings/go/s3/spec/access/v2"
 	identityv1 "ocm.software/open-component-model/bindings/go/s3/spec/identity/v1"
 )
 
@@ -83,8 +83,7 @@ func (r *ResourceRepository) GetResourceCredentialConsumerIdentity(ctx context.C
 // returned blob reads from that file, which outlives this call and is owned by the
 // caller.
 //
-// The content is held to the digest the resource declares, which is the digest over
-// exactly these bytes, so a store serving something else fails the read.
+// Descriptor digest verification is applied by the resource plugin registry.
 func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (blob.ReadOnlyBlob, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
@@ -101,7 +100,7 @@ func (r *ResourceRepository) DownloadResource(ctx context.Context, resource *des
 		return nil, err
 	}
 
-	return repository.VerifyDownload(ctx, resource, result.Blob)
+	return result.Blob, nil
 }
 
 func (r *ResourceRepository) convertAccess(resource *descriptor.Resource) (*v2.S3, error) {
@@ -171,7 +170,7 @@ func (r *ResourceRepository) GetResourceDigestProcessorCredentialConsumerIdentit
 // the computed value is verified against it.
 //
 // After a successful digest, the access is pinned to the object version that was read;
-// see [ResourceRepository.pinAccess].
+// unversioned objects remain unpinned.
 func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, resource *descriptor.Resource, credentials runtime.Typed) (*descriptor.Resource, error) {
 	spec, err := r.convertAccess(resource)
 	if err != nil {
