@@ -898,8 +898,8 @@ components:
 	assert.Empty(t, repo.addedVersions, "no component version should be added when the version is invalid")
 }
 
-// TestConstruct_InvalidResourceVersionRejected verifies that an invalid element
-// version (defaulted or explicit) is still rejected after processing.
+// TestConstruct_InvalidResourceVersionRejected verifies that an invalid explicit
+// resource version is rejected before any resource content is uploaded.
 func TestConstruct_InvalidResourceVersionRejected(t *testing.T) {
 	t.Parallel()
 
@@ -940,6 +940,6 @@ components:
 	require.Error(t, err)
 	assert.ErrorContains(t, err, `resource "test-resource" has an invalid version "not a valid version"`)
 
-	// The component version is added only after successful validation.
+	assert.Empty(t, repo.addedLocalResources, "no resource blob should be uploaded when a resource version is invalid")
 	assert.Empty(t, repo.addedVersions, "no component version should be added when a resource version is invalid")
 }

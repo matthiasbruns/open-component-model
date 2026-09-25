@@ -223,12 +223,9 @@ func (c *DefaultConstructor) constructComponent(ctx context.Context, component *
 		return nil, err
 	}
 
-	// Validate the component version before processing so an invalid version
-	// fails fast, before processDescriptor uploads any resource or source
-	// content to the target repository. Resource, source, and reference
-	// versions are defaulted during processing, so their validation must run
-	// afterwards in validateVersions.
-	if err := c.validateComponentVersion(component.Name, component.Version); err != nil {
+	// Validate all versions before processDescriptor uploads any resource or
+	// source content, so an invalid version never leaves orphaned blobs behind.
+	if err := c.validateVersions(component); err != nil {
 		return nil, fmt.Errorf("component %q failed version validation: %w", component.Name, err)
 	}
 
@@ -238,10 +235,6 @@ func (c *DefaultConstructor) constructComponent(ctx context.Context, component *
 
 	if err := descriptor.Validate(desc); err != nil {
 		return nil, fmt.Errorf("component %q failed validation: %w", component.Name, err)
-	}
-
-	if err := c.validateVersions(desc); err != nil {
-		return nil, fmt.Errorf("component %q failed version validation: %w", component.Name, err)
 	}
 
 	if err := repo.AddComponentVersion(ctx, desc); err != nil {
@@ -260,22 +253,17 @@ func (c *DefaultConstructor) versioningRegistry() *versioning.Registry {
 	return versioning.Default()
 }
 
-// validateComponentVersion checks the component version against the configured
-// versioning registry (loose semver by default). It is called before
-// processDescriptor so an invalid version fails before any content is uploaded.
-func (c *DefaultConstructor) validateComponentVersion(name, version string) error {
-	if !c.versioningRegistry().Valid(version) {
-		return fmt.Errorf("component %q has an invalid version %q for the configured versioning schemes", name, version)
-	}
-	return nil
-}
-
-// validateVersions checks every resource, source, and reference version against
-// the configured versioning registry (loose semver by default). The component
-// version is validated earlier by validateComponentVersion. It returns a joined
-// error naming each offending element.
-func (c *DefaultConstructor) validateVersions(desc *descriptor.Descriptor) error {
+// validateVersions checks the component version and every resource, source,
+// and reference version against the configured versioning registry (loose
+// semver by default). An empty resource or source version is not checked: it
+// is defaulted to the already validated component version during processing.
+// It returns a joined error naming each offending element.
+func (c *DefaultConstructor) validateVersions(component *constructor.Component) error {
 	registry := c.versioningRegistry()
+
+	if !registry.Valid(component.Version) {
+		return fmt.Errorf("component %q has an invalid version %q for the configured versioning schemes", component.Name, component.Version)
+	}
 
 	var errs []error
 	check := func(kind, name, version string) {
@@ -284,13 +272,17 @@ func (c *DefaultConstructor) validateVersions(desc *descriptor.Descriptor) error
 		}
 	}
 
-	for _, r := range desc.Component.Resources {
-		check("resource", r.Name, r.Version)
+	for _, r := range component.Resources {
+		if r.Version != "" {
+			check("resource", r.Name, r.Version)
+		}
 	}
-	for _, s := range desc.Component.Sources {
-		check("source", s.Name, s.Version)
+	for _, s := range component.Sources {
+		if s.Version != "" {
+			check("source", s.Name, s.Version)
+		}
 	}
-	for _, ref := range desc.Component.References {
+	for _, ref := range component.References {
 		check("reference", ref.Name, ref.Version)
 	}
 
@@ -574,8 +566,7 @@ func (c *DefaultConstructor) processSource(ctx context.Context, targetRepo Targe
 	} else {
 		logger.Debug("processing source with existing access")
 		// Sources with existing access may omit their version; default it to the
-		// component version so validateVersions does not reject an otherwise
-		// schema-valid source for an empty version. Explicit versions are kept.
+		// component version. Explicit versions are kept.
 		if src.Version == "" {
 			src.Version = version
 		}
