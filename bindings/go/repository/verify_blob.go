@@ -63,6 +63,7 @@ func (b *verifyingBlob) ReadCloser() (io.ReadCloser, error) {
 		base:     rc,
 		digester: b.expected.Algorithm().Digester(),
 		expected: b.expected,
+		size:     b.Size(),
 	}, nil
 }
 
@@ -116,6 +117,8 @@ type verifyingReadCloser struct {
 	base     io.ReadCloser
 	digester digest.Digester
 	expected digest.Digest
+	size     int64
+	read     int64
 	eof      bool
 }
 
@@ -125,6 +128,7 @@ type verifyingReadCloser struct {
 // verification.
 func (v *verifyingReadCloser) Read(p []byte) (int, error) {
 	n, err := v.base.Read(p)
+	v.read += int64(n)
 	if n > 0 {
 		if _, writeErr := v.digester.Hash().Write(p[:n]); writeErr != nil {
 			return n, writeErr
@@ -148,7 +152,9 @@ func (v *verifyingReadCloser) Close() error {
 
 // verify refuses content that has not reached EOF before comparing digests.
 func (v *verifyingReadCloser) verify() error {
-	if !v.eof {
+	// A reader that stops at the known size, like io.CopyN, never observes EOF.
+	complete := v.eof || (v.size > blob.SizeUnknown && v.read == v.size)
+	if !complete {
 		return fmt.Errorf("digest mismatch: incomplete read for digest %s", v.expected)
 	}
 	if actual := v.digester.Digest(); actual != v.expected {

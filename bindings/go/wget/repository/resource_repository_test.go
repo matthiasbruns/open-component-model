@@ -193,6 +193,33 @@ func TestDownloadResource_DigestVerification(t *testing.T) {
 		assert.Equal(t, []byte(served), readBlob(t, b))
 	})
 
+	t.Run("copies content of known size matching the resource digest", func(t *testing.T) {
+		repo, resource := serve(t, served)
+		resource.Digest = &descruntime.Digest{
+			HashAlgorithm:          "SHA-256",
+			NormalisationAlgorithm: "genericBlobDigest/v1",
+			Value:                  godigest.FromString(served).Encoded(),
+		}
+
+		// blob.Copy stops at the known size and never reads EOF.
+		b, err := repo.DownloadResource(t.Context(), resource, nil)
+		require.NoError(t, err)
+		require.NoError(t, blob.Copy(io.Discard, b))
+	})
+
+	t.Run("accepts a digest value carrying the algorithm prefix", func(t *testing.T) {
+		repo, resource := serve(t, served)
+		resource.Digest = &descruntime.Digest{
+			HashAlgorithm:          "SHA-256",
+			NormalisationAlgorithm: "genericBlobDigest/v1",
+			Value:                  godigest.FromString(served).String(),
+		}
+
+		b, err := repo.DownloadResource(t.Context(), resource, nil)
+		require.NoError(t, err)
+		assert.Equal(t, []byte(served), readBlob(t, b))
+	})
+
 	t.Run("rejects content that does not match the resource digest", func(t *testing.T) {
 		repo, resource := serve(t, "not what was promised")
 		resource.Digest = &descruntime.Digest{

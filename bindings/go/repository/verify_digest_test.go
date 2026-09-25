@@ -30,6 +30,11 @@ func TestDigest_Parse(t *testing.T) {
 			expected: digest.NewDigestFromEncoded(digest.SHA256, value),
 		},
 		{
+			name:     "value carrying the algorithm prefix",
+			digest:   &descruntime.Digest{HashAlgorithm: "SHA-256", Value: "sha256:" + value},
+			expected: digest.NewDigestFromEncoded(digest.SHA256, value),
+		},
+		{
 			name:     "uppercase value is folded",
 			digest:   &descruntime.Digest{HashAlgorithm: "SHA-256", Value: strings.ToUpper(value)},
 			expected: digest.NewDigestFromEncoded(digest.SHA256, value),

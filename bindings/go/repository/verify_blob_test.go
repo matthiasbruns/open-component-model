@@ -187,3 +187,9 @@ type plainBlob struct {
 func (p plainBlob) ReadCloser() (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(p.content)), nil
 }
+
+func TestVerifyingBlob_CopyOfKnownSizeVerifies(t *testing.T) {
+	b := newVerifying(t, verifyTestContent, digest.FromString(verifyTestContent))
+	require.Equal(t, int64(len(verifyTestContent)), b.Size())
+	require.NoError(t, blob.Copy(io.Discard, b))
+}

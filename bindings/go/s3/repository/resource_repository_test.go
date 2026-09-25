@@ -224,6 +224,13 @@ func Test_DownloadResource_DigestVerification(t *testing.T) {
 		require.Equal(t, content, got)
 	})
 
+	t.Run("copies an object of known size matching the resource digest", func(t *testing.T) {
+		// blob.Copy stops at the known size and never reads EOF.
+		b, err := downloadWith(t, content, matching)
+		require.NoError(t, err)
+		require.NoError(t, blob.Copy(io.Discard, b))
+	})
+
 	t.Run("rejects an object that does not match the resource digest", func(t *testing.T) {
 		// Verification is streaming, so the download itself still succeeds.
 		b, err := downloadWith(t, []byte("not what was promised"), matching)

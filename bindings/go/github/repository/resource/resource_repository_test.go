@@ -229,6 +229,17 @@ func TestResourceRepository_DownloadResource_DigestVerification(t *testing.T) {
 		assert.Equal(t, payload, readBlob(t, downloaded))
 	})
 
+	t.Run("copies an archive of known size matching the resource digest", func(t *testing.T) {
+		baseURL, payload := mockGitHub(t)
+		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
+		res.Digest = digestOf(payload)
+
+		// blob.Copy stops at the known size and never reads EOF.
+		downloaded, err := NewResourceRepository().DownloadResource(t.Context(), res, nil)
+		require.NoError(t, err)
+		require.NoError(t, blobpkg.Copy(io.Discard, downloaded))
+	})
+
 	t.Run("rejects an archive that does not match the resource digest", func(t *testing.T) {
 		baseURL, _ := mockGitHub(t)
 		res := githubResource(baseURL+"/octocat/Hello-World", testCommit)
