@@ -237,6 +237,12 @@ func (c *DefaultConstructor) constructComponent(ctx context.Context, component *
 		return nil, fmt.Errorf("component %q failed validation: %w", component.Name, err)
 	}
 
+	// Input methods can return a fully processed resource or source that carries
+	// its own version, so the final descriptor is checked again before publishing.
+	if err := c.validateDescriptorVersions(desc); err != nil {
+		return nil, fmt.Errorf("component %q failed version validation: %w", component.Name, err)
+	}
+
 	if err := repo.AddComponentVersion(ctx, desc); err != nil {
 		return nil, fmt.Errorf("error adding component version to target: %w", err)
 	}
@@ -254,10 +260,10 @@ func (c *DefaultConstructor) versioningRegistry() *versioning.Registry {
 }
 
 // validateVersions checks the component version and every resource, source,
-// and reference version against the configured versioning registry (loose
-// semver by default). An empty resource or source version is not checked: it
-// is defaulted to the already validated component version during processing.
-// It returns a joined error naming each offending element.
+// and reference version of the constructor spec against the configured
+// versioning registry (loose semver by default). It runs before any content is
+// uploaded. An empty resource or source version is not checked: it is defaulted
+// to the already validated component version during processing.
 func (c *DefaultConstructor) validateVersions(component *constructor.Component) error {
 	registry := c.versioningRegistry()
 
@@ -266,27 +272,45 @@ func (c *DefaultConstructor) validateVersions(component *constructor.Component) 
 	}
 
 	var errs []error
-	check := func(kind, name, version string) {
-		if !registry.Valid(version) {
-			errs = append(errs, fmt.Errorf("%s %q has an invalid version %q for the configured versioning schemes", kind, name, version))
-		}
-	}
-
 	for _, r := range component.Resources {
 		if r.Version != "" {
-			check("resource", r.Name, r.Version)
+			errs = append(errs, checkVersion(registry, "resource", r.Name, r.Version))
 		}
 	}
 	for _, s := range component.Sources {
 		if s.Version != "" {
-			check("source", s.Name, s.Version)
+			errs = append(errs, checkVersion(registry, "source", s.Name, s.Version))
 		}
 	}
 	for _, ref := range component.References {
-		check("reference", ref.Name, ref.Version)
+		errs = append(errs, checkVersion(registry, "reference", ref.Name, ref.Version))
 	}
-
 	return errors.Join(errs...)
+}
+
+// validateDescriptorVersions checks every resource, source, and reference
+// version of the processed descriptor against the configured versioning registry.
+func (c *DefaultConstructor) validateDescriptorVersions(desc *descriptor.Descriptor) error {
+	registry := c.versioningRegistry()
+
+	var errs []error
+	for _, r := range desc.Component.Resources {
+		errs = append(errs, checkVersion(registry, "resource", r.Name, r.Version))
+	}
+	for _, s := range desc.Component.Sources {
+		errs = append(errs, checkVersion(registry, "source", s.Name, s.Version))
+	}
+	for _, ref := range desc.Component.References {
+		errs = append(errs, checkVersion(registry, "reference", ref.Name, ref.Version))
+	}
+	return errors.Join(errs...)
+}
+
+func checkVersion(registry *versioning.Registry, kind, name, version string) error {
+	if !registry.Valid(version) {
+		return fmt.Errorf("%s %q has an invalid version %q for the configured versioning schemes", kind, name, version)
+	}
+	return nil
 }
 
 // ProcessConflictStrategy checks for existing component versions in the target repository

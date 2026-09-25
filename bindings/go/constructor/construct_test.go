@@ -943,3 +943,57 @@ components:
 	assert.Empty(t, repo.addedLocalResources, "no resource blob should be uploaded when a resource version is invalid")
 	assert.Empty(t, repo.addedVersions, "no component version should be added when a resource version is invalid")
 }
+
+// TestConstruct_InvalidProcessedResourceVersionRejected verifies that a version
+// supplied by an input method's processed resource is validated before the
+// component version is added.
+func TestConstruct_InvalidProcessedResourceVersionRejected(t *testing.T) {
+	t.Parallel()
+
+	resourceProvider := &mockInputMethodProvider{
+		methods: map[runtime.Type]ResourceInputMethod{
+			runtime.NewVersionedType("mock", "v1"): &mockInputMethod{
+				processedResource: &descriptor.Resource{
+					ElementMeta: descriptor.ElementMeta{
+						ObjectMeta: descriptor.ObjectMeta{
+							Name:    "test-resource",
+							Version: "not a valid version",
+						},
+					},
+					Type:     "json",
+					Relation: descriptor.LocalRelation,
+					Access:   &descriptor.LocalBlob{MediaType: "application/json"},
+				},
+			},
+		},
+	}
+
+	yamlData := `
+components:
+  - name: ocm.software/valid-component
+    version: v1.0.0
+    provider:
+      name: test-provider
+    resources:
+      - name: test-resource
+        relation: local
+        type: json
+        input:
+          type: mock/v1
+`
+
+	var comp constructorv1.ComponentConstructor
+	require.NoError(t, yaml.Unmarshal([]byte(yamlData), &comp))
+	converted := constructorruntime.ConvertToRuntimeConstructor(&comp)
+
+	repo := newMockTargetRepository()
+	opts := Options{
+		ResourceInputMethodProvider: resourceProvider,
+		TargetRepositoryProvider:    &mockTargetRepositoryProvider{repo: repo},
+	}
+
+	err := NewDefaultConstructor(converted, opts).Construct(t.Context())
+	require.Error(t, err)
+	assert.ErrorContains(t, err, `resource "test-resource" has an invalid version "not a valid version"`)
+	assert.Empty(t, repo.addedVersions, "no component version should be added when a processed resource version is invalid")
+}
