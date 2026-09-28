@@ -131,7 +131,7 @@ shows which access types the OCI uploader supports and what `resource.access.toO
 | --- | --- | --- |
 | `OCIImage` (all aliases) | always | Parsed from `imageReference`: `host`, `registry` (= host), `repository`, `tag`, `digest`, `reference`. E.g. `ghcr.io/org/image:v1` → repository `org/image`, tag `v1`. |
 | `Helm` | always | Parsed from the chart reference: registry = helm repo host, repository = repo URL path + chart name, tag = version. E.g. `https://stefanprodan.github.io/podinfo`, chart `podinfo:6.5.0` → repository `podinfo/podinfo`, tag `6.5.0`. |
-| `LocalBlob` (OCI manifest media type) | media type is an OCI-compliant manifest | Parsed from `access.referenceName`: a first path segment without `.` or `:` and not `localhost` belongs to the repository. E.g. `stefanprodan/podinfo:6.5.0` → repository `stefanprodan/podinfo`, tag `6.5.0`. May have no tag or no reference. |
+| `LocalBlob` (OCI manifest media type) | media type is an OCI-compliant manifest | Parsed from `access.referenceName`, a repository name relative to the blob's repository: `registry` is empty and every path component belongs to `repository`. E.g. `stefanprodan/podinfo:6.5.0` → repository `stefanprodan/podinfo`, tag `6.5.0`; `ocm.software/podinfo` → repository `ocm.software/podinfo`. May have no tag or no reference. |
 | anything else (Wget, S3, GitHub, …) | never | — (falls through) |
 
 #### `imageReference`
@@ -142,7 +142,7 @@ are available:
 | Identifier | Value |
 | --- | --- |
 | `resource` | The source resource descriptor (same `resource` alias as the HTTP uploader). Call `resource.access.toOCI()` to obtain a map with keys `host`, `registry` (= host), `repository`, `tag`, `digest`, `reference` (tag@digest, or tag, or digest). This is the same `toOCI()` function the OCM Kubernetes controller offers in its CEL expressions. |
-| `target` | The OCI registry target. Exposes `target.baseUrl` (the registry host) and `target.subPath` (the repository prefix; may be `""`). Available only when the component target is an OCI registry. |
+| `target` | The OCI registry target. Exposes `target.baseUrl` (the registry, including a scheme if the target has one, e.g. `http://127.0.0.1:5000`) and `target.subPath` (the repository prefix; may be `""`). Available only when the component target is an OCI registry. |
 
 When `imageReference` is omitted, the uploader uses the following default:
 
@@ -155,15 +155,8 @@ imageReference: >-
 ```
 
 It produces `<baseUrl>[/<subPath>]/<repository>[:<tag>]` — the same references
-the former `--upload-as ociArtifact` flag produced for OCI images and Helm
-charts. Writing it out explicitly is equivalent to omitting it.
-
-{{< callout context="note" title="Behaviour change for local blobs with a registry in referenceName" icon="outline/info-circle" >}}
-For local blobs whose `access.referenceName` contains a registry prefix (e.g.
-`ghcr.io/org/image:v1`), `toOCI()` strips the registry: repository becomes
-`org/image`, tag `v1`. The artifact therefore lands at `<target>/org/image:v1`
-instead of the old `<target>/ghcr.io/org/image:v1`.
-{{< /callout >}}
+the former `--upload-as ociArtifact` flag produced. Writing it out explicitly is
+equivalent to omitting it.
 
 An uploader applies only if every identifier its template uses is available. With
 the default template that means the component target must be an OCI registry
