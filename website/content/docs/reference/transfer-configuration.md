@@ -208,6 +208,35 @@ Upload a specific resource to a fixed reference:
   imageReference: ghcr.io/target-org/special/my-image:1.0.0
 ```
 
+Upload a local blob to its `referenceName` as-is, e.g. when the name already is a
+full reference such as `ghcr.io/org/image:v1`:
+
+```yaml
+- type: oci.uploader.transfer.config.ocm.software/v1alpha1
+  match:
+    name: my-image
+  imageReference: >-
+    ${resource.access.toOCI().repository
+    + (resource.access.toOCI().tag == "" ? "" : ":" + resource.access.toOCI().tag)
+    + (resource.access.toOCI().digest == "" ? "" : "@" + resource.access.toOCI().digest)}
+```
+
+For a local blob, `toOCI()` keeps every path component of `referenceName` in
+`repository`, so this rebuilds the name exactly, including tag and digest. Keep
+the following in mind:
+
+- Scope the entry to local blobs, e.g. by `match.name`. For an OCI image,
+  `repository` excludes the registry, so the same template would produce a
+  registry-less reference.
+- `referenceName` must be a valid repository name. A name with a port, such as
+  `127.0.0.1:5000/org/image:v1`, is not one, and a template that calls `toOCI()`
+  on it fails the build with `cannot parse referenceName`.
+- Don't use `${resource.access.referenceName}` directly. The type of `resource`
+  is inferred from the first resource in the component descriptor. If that
+  resource's access has no `referenceName`, the template fails to compile with
+  `undefined field 'referenceName'`, and `resource.access.?referenceName` fails
+  the same way. `toOCI()` returns a map and is not affected.
+
 See [Migrate from --upload-as to Uploader Configurations]({{< relref "docs/how-to/migrate-from-upload-as.md" >}}).
 
 ### `http.uploader.transfer.config.ocm.software/v1alpha1`
