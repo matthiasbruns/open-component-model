@@ -23,7 +23,7 @@ type: generic.config.ocm.software/v1
 configurations:
   - type: transfer.config.ocm.software/v1alpha1
     copyMode: allResources
-    uploadType: ociArtifact
+  - type: oci.uploader.transfer.config.ocm.software/v1alpha1
   - type: http.uploader.transfer.config.ocm.software/v1alpha1
     match:
       accessType: Wget/v1
@@ -33,13 +33,13 @@ configurations:
 
 | Type                                                  | Purpose                                                                  |
 |-------------------------------------------------------|--------------------------------------------------------------------------|
-| `transfer.config.ocm.software/v1alpha1`               | Global transfer settings: recursion, which resources are copied and how. |
+| `transfer.config.ocm.software/v1alpha1`               | Global transfer settings: recursion and which resources are copied.      |
+| `oci.uploader.transfer.config.ocm.software/v1alpha1`  | Per-match rule that uploads a resource as a separate OCI artifact.       |
 | `http.uploader.transfer.config.ocm.software/v1alpha1` | Per-match rule that streams a resource to a custom HTTP target.          |
 
 By default the CLI looks for configuration in `$HOME/.ocmconfig`. Pass
 `--config <file>` to use a different file. The corresponding CLI flags
-(`--recursive`, `--copy-resources`, `--upload-as`) override the transfer config
-when set.
+(`--recursive`, `--copy-resources`) override the transfer config when set.
 
 ## Transfer Settings
 
@@ -56,7 +56,6 @@ behaviour. All fields are optional; when omitted they resolve to their defaults.
 |--------------|-------------|--------------------|---------------------------------------------------------------------------------|
 | `recursive`  | `-1` or `0` | `0` (no recursion) | `-1` transfers the whole reference tree; `0` transfers only the named version.  |
 | `copyMode`   | enum        | `localBlob`        | Which resources are copied. See [Copy Mode](#copy-mode).                        |
-| `uploadType` | enum        | `localBlob`        | How copied resources are stored in the target. See [Upload Type](#upload-type). |
 
 #### Copy Mode
 
@@ -65,26 +64,125 @@ behaviour. All fields are optional; when omitted they resolve to their defaults.
 | `localBlob`    | Copy only resources already stored as local blobs. External resources keep their original access and are not fetched. |
 | `allResources` | Fetch every external resource and re-upload it to the target. Equivalent to the CLI `--copy-resources` flag.          |
 
-#### Upload Type
-
-Only relevant when a resource is being copied.
-
-| Value         | Meaning                                                                                                     |
-|---------------|-------------------------------------------------------------------------------------------------------------|
-| `localBlob`   | Embed the resource content as a local blob in the target component version's manifest. This is the default. |
-| `ociArtifact` | Upload the resource as a separate OCI artifact in the target registry (OCI targets only; `--upload-as`).    |
-
 ## Uploader Configurations
 
-An **uploader configuration** streams resources that match a rule to a custom
-target instead of the default download-and-embed path. The config type dedicates
-each uploader to a specific target: `http.uploader.transfer.config.ocm.software/v1alpha1`
-streams to an HTTP endpoint. Each entry is an independent rule; you may declare
-several.
+An **uploader configuration** routes resources that match a rule to a custom
+target instead of the default download-and-embed path. Two config types are
+available:
 
-During transfer, the **first** uploader whose `match` applies to a resource wins,
-and it takes precedence over `copyMode`/`uploadType` for that resource. Because
-matching is first-match, declare more specific rules before broader ones.
+- `oci.uploader.transfer.config.ocm.software/v1alpha1` — uploads a matched
+  resource as a separate OCI artifact in the target registry (or a custom
+  registry when `imageReference` is set).
+- `http.uploader.transfer.config.ocm.software/v1alpha1` — streams a matched
+  resource's content to a custom HTTP endpoint.
+
+Each entry is an independent rule; you may declare several.
+
+During transfer, uploaders are evaluated in declaration order. The **first**
+uploader whose `match` applies to a resource and whose applicability rules are
+met wins. An uploader runs regardless of `copyMode`. If a matched uploader does
+not apply to a resource (e.g. an OCI uploader without `imageReference` when the
+target is a CTF), the loop continues with the next uploader. A resource with no
+matching or applicable uploader follows the default `copyMode` handling (local
+blob). Because matching is first-match, declare more specific rules before
+broader ones.
+
+### `oci.uploader.transfer.config.ocm.software/v1alpha1`
+
+Uploads a matched resource as a separate OCI artifact in the target registry.
+The resource is stored independently from the component version, making it
+directly addressable and pullable with standard OCI tools.
+
+#### Schema
+
+{{< schema-renderer url="/schemas/bindings/go/transfer/OCIUploaderConfig.schema.json" >}}
+
+#### Fields
+
+| Field                 | Type                | Required | Description                                                                                                                                          |
+| --------------------- | ------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `match`               | object              | no       | Restricts the resources this uploader applies to. When omitted, every resource matches.                                                              |
+| `match.accessType`    | `runtime.Type`      | no       | Access type to match (by name; omitted version = any). Optional for the OCI uploader (required for HTTP). Does not resolve aliases — see note below. |
+| `match.name`          | string              | no       | Restrict the match to resources with this exact name.                                                                                                |
+| `match.version`       | string              | no       | Restrict the match to resources with this exact version.                                                                                             |
+| `match.extraIdentity` | `map[string]string` | no       | Restrict the match to resources whose identity contains these key/value pairs.                                                                       |
+| `imageReference`      | CEL expression      | no       | Target image reference. A `${…}` CEL template or a plain literal. When empty, the default mapping is used.                                           |
+
+{{< callout context="note" title="match.accessType does not resolve aliases" icon="outline/info-circle" >}}
+`match.accessType` compares type names exactly. Access types often have
+multiple alias names in descriptors (e.g. OCI images appear as `OCIImage`,
+`ociArtifact`, `ociRegistry`, or `ociImage`; local blobs as `LocalBlob` or
+`localBlob`). If you need to match by access type, add one uploader entry per
+alias name your descriptors carry. Matching by `match.name` avoids this issue
+entirely.
+{{< /callout >}}
+
+#### Applicability
+
+Not every resource type can be uploaded as an OCI artifact. The following table
+shows which access types the OCI uploader supports:
+
+| Source access type | Applies when | `referenceName` |
+| -------------------- | -------------- | ----------------- |
+| `OCIImage` (all aliases) | always | `repository[:tag]` (registry and digest dropped from `imageReference`) |
+| `Helm` | always | chart repository URL path, chart name and version (e.g. `podinfo/podinfo:6.5.0` for repository `https://stefanprodan.github.io/podinfo` and chart `podinfo:6.5.0`) |
+| `LocalBlob` (OCI manifest media type) | media type is an OCI-compliant manifest | `access.referenceName` verbatim (may be empty) |
+| anything else (Wget, S3, GitHub, …) | never | — (falls through) |
+
+#### Default mapping (no `imageReference`)
+
+Without `imageReference`, the uploader applies only when:
+
+1. The component target is an OCI registry, and
+2. The resource has a non-empty `referenceName`.
+
+The image reference is then `targetRepository + "/" + referenceName`, where
+`targetRepository` is the target registry's `BaseUrl` plus an optional `SubPath`.
+This is the same mapping that the former `--upload-as ociArtifact` flag produced.
+If either condition is not met, the uploader falls through to the next uploader
+or to the default local blob handling.
+
+#### Custom `imageReference`
+
+With `imageReference`, the value is a CEL template (`${…}`) or a plain literal.
+Three aliases are available:
+
+| Alias              | Value                                                                          |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `resource`         | The source resource descriptor (same as the HTTP uploader's `resource` alias). |
+| `referenceName`    | The derived reference name for the resource. Only offered when non-empty.      |
+| `targetRepository` | The target repository path. Only offered for OCI registry targets.             |
+
+A custom `imageReference` also works for CTF targets, because `TransferOCIArtifact`
+and `AddOCIArtifact` push to the specified image reference independently of the
+component target.
+
+#### Examples
+
+Upload every applicable resource as an OCI artifact using the default mapping
+(with `--copy-resources`, equivalent to the former `--upload-as ociArtifact`):
+
+```yaml
+- type: oci.uploader.transfer.config.ocm.software/v1alpha1
+```
+
+Relocate images to a custom registry path:
+
+```yaml
+- type: oci.uploader.transfer.config.ocm.software/v1alpha1
+  imageReference: '${"ghcr.io/mirror/" + referenceName}'
+```
+
+Upload a specific resource to a fixed reference:
+
+```yaml
+- type: oci.uploader.transfer.config.ocm.software/v1alpha1
+  match:
+    name: my-image
+  imageReference: ghcr.io/target-org/special/my-image:1.0.0
+```
+
+See [Migrate from --upload-as to Uploader Configurations]({{< relref "docs/how-to/migrate-from-upload-as.md" >}}).
 
 ### `http.uploader.transfer.config.ocm.software/v1alpha1`
 
@@ -311,9 +409,10 @@ the same way you would for any HTTP endpoint; see
 
 ### Precedence
 
-For a given resource, an uploader match takes precedence over the default handlers
-and runs regardless of `copyMode`. A resource with no matching uploader follows the
-normal `copyMode`/`uploadType` behaviour.
+For a given resource, uploaders are evaluated in declaration order and the first
+that both matches and applies wins. An uploader runs regardless of `copyMode`. If
+a matched uploader does not apply, the loop continues. A resource with no
+matching or applicable uploader follows the default `copyMode` handling (local blob).
 
 ### Deterministic Plans
 
