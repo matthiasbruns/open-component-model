@@ -24,6 +24,7 @@ configurations:
   - type: transfer.config.ocm.software/v1alpha1
     copyMode: allResources
   - type: oci.uploader.transfer.config.ocm.software/v1alpha1
+    imageReference: '${targetRepository + "/" + referenceName}'
   - type: http.uploader.transfer.config.ocm.software/v1alpha1
     match:
       accessType: Wget/v1
@@ -81,8 +82,8 @@ Each entry is an independent rule; you may declare several.
 During transfer, uploaders are evaluated in declaration order. The **first**
 uploader whose `match` applies to a resource and whose applicability rules are
 met wins. An uploader runs regardless of `copyMode`. If a matched uploader does
-not apply to a resource (e.g. an OCI uploader without `imageReference` when the
-target is a CTF), the loop continues with the next uploader. A resource with no
+not apply to a resource (e.g. an OCI uploader whose `imageReference` uses
+`targetRepository` when the target is a CTF), the loop continues with the next uploader. A resource with no
 matching or applicable uploader follows the default `copyMode` handling (local
 blob). Because matching is first-match, declare more specific rules before
 broader ones.
@@ -106,7 +107,7 @@ directly addressable and pullable with standard OCI tools.
 | `match.name`          | string              | no       | Restrict the match to resources with this exact name.                                                                                                |
 | `match.version`       | string              | no       | Restrict the match to resources with this exact version.                                                                                             |
 | `match.extraIdentity` | `map[string]string` | no       | Restrict the match to resources whose identity contains these key/value pairs.                                                                       |
-| `imageReference`      | CEL expression      | no       | Target image reference. A `${…}` CEL template or a plain literal. When empty, the default mapping is used.                                           |
+| `imageReference`      | CEL expression      | no       | Target image reference: a `${…}` CEL template or a plain literal. Defaults to `${targetRepository + "/" + referenceName}`.                           |
 
 {{< callout context="note" title="match.accessType does not resolve aliases" icon="outline/info-circle" >}}
 `match.accessType` compares type names exactly. Access types often have
@@ -129,41 +130,42 @@ shows which access types the OCI uploader supports:
 | `LocalBlob` (OCI manifest media type) | media type is an OCI-compliant manifest | `access.referenceName` verbatim (may be empty) |
 | anything else (Wget, S3, GitHub, …) | never | — (falls through) |
 
-#### Default mapping (no `imageReference`)
+#### `imageReference`
 
-Without `imageReference`, the uploader applies only when:
+`imageReference` is a CEL template (`${…}`) or a plain literal. Three aliases
+are available:
 
-1. The component target is an OCI registry, and
-2. The resource has a non-empty `referenceName`.
+| Alias              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `resource`         | The source resource descriptor (same as the HTTP uploader's `resource` alias).                        |
+| `referenceName`    | The reference name from the table above. Available only when non-empty.                               |
+| `targetRepository` | The target registry's `baseUrl` plus its optional `subPath`. Available only for OCI registry targets. |
 
-The image reference is then `targetRepository + "/" + referenceName`, where
-`targetRepository` is the target registry's `BaseUrl` plus an optional `SubPath`.
-This is the same mapping that the former `--upload-as ociArtifact` flag produced.
-If either condition is not met, the uploader falls through to the next uploader
-or to the default local blob handling.
+When `imageReference` is omitted, the uploader uses this CEL template:
 
-#### Custom `imageReference`
+```yaml
+imageReference: '${targetRepository + "/" + referenceName}'
+```
 
-With `imageReference`, the value is a CEL template (`${…}`) or a plain literal.
-Three aliases are available:
+Writing it out explicitly is equivalent to omitting it. It is the same mapping
+the former `--upload-as ociArtifact` flag produced.
 
-| Alias              | Value                                                                          |
-| ------------------ | ------------------------------------------------------------------------------ |
-| `resource`         | The source resource descriptor (same as the HTTP uploader's `resource` alias). |
-| `referenceName`    | The derived reference name for the resource. Only offered when non-empty.      |
-| `targetRepository` | The target repository path. Only offered for OCI registry targets.             |
-
-A custom `imageReference` also works for CTF targets, because `TransferOCIArtifact`
-and `AddOCIArtifact` push to the specified image reference independently of the
-component target.
+An uploader applies only if every alias its template uses is available. With the
+default template that means the component target must be an OCI registry and the
+resource must have a non-empty `referenceName`; otherwise the uploader falls
+through to the next uploader or to the default local blob handling. A template
+that does not use `targetRepository` (for example an absolute registry prefix)
+also works for CTF targets, because `TransferOCIArtifact` and `AddOCIArtifact`
+push to the templated image reference independently of the component target.
 
 #### Examples
 
-Upload every applicable resource as an OCI artifact using the default mapping
+Upload every applicable resource as an OCI artifact next to the component version
 (with `--copy-resources`, equivalent to the former `--upload-as ociArtifact`):
 
 ```yaml
 - type: oci.uploader.transfer.config.ocm.software/v1alpha1
+  imageReference: '${targetRepository + "/" + referenceName}'
 ```
 
 Relocate images to a custom registry path:
