@@ -477,19 +477,16 @@ configurations:
     method: PUT
   # 3. OCI images, Helm charts and OCI-manifest local blobs become separate OCI
   #    artifacts next to the component version (former uploadType: ociArtifact).
+  #    Default match and imageReference.
   - type: oci.uploader.transfer.config.ocm.software/v1alpha1
-    match: >-                                     # default
-      target.type == "OCIRepository"
-      && (resource.access.isType(["OCIImage", "Helm"])
-        || (resource.access.isType("LocalBlob")
-          && isOCIManifest(resource.access.mediaType)
-          && has(resource.access.referenceName)))
-    # imageReference omitted = default
   # 4. Everything the rules above did not select is embedded as a local blob
-  #    (former copyMode: allResources).
+  #    (former copyMode: allResources). Default match.
   - type: localblob.uploader.transfer.config.ocm.software/v1alpha1
-    match: resource.access.isType(["LocalBlob", "OCIImage", "Helm", "Wget", "S3", "GitHub"])   # default
 ```
+
+Entries 3 and 4 need no fields: their default `match` (see
+[Default `match`](#default-match) and the local blob uploader section) and the
+default `imageReference` are what the former settings did.
 
 Outcome for `ocm.software/demo:1.0.0` transferred to `ghcr.io/target-org/ocm`:
 
@@ -542,6 +539,8 @@ configurations:
   - type: oci.uploader.transfer.config.ocm.software/v1alpha1
 ```
 
+On the command line: `--uploader oci`.
+
 | Resource | Outcome |
 | --- | --- |
 | `app` | oci `ghcr.io/target-org/ocm/acme/app:1.0.0` |
@@ -553,31 +552,9 @@ configurations:
 
 #### E2 — the same with every default spelled out
 
-```yaml
-type: generic.config.ocm.software/v1
-configurations:
-  - type: oci.uploader.transfer.config.ocm.software/v1alpha1
-    match: >-
-      target.type == "OCIRepository"
-      && (resource.access.isType(["OCIImage", "Helm"])
-        || (resource.access.isType("LocalBlob")
-          && isOCIManifest(resource.access.mediaType)
-          && has(resource.access.referenceName)))
-    imageReference: |-
-      ${target.baseUrl
-        + (target.subPath == "" ? "" : "/" + target.subPath)
-        + "/" + (has(resource.access.referenceName)
-          ? resource.access.referenceName
-          : has(resource.access.helmChart)
-            ? (url(resource.access.helmRepository).path.split("/") + [resource.access.helmChart.split(":")[0]]).filter(s, s != "").join("/")
-              + (has(resource.access.version) && resource.access.version != ""
-                ? ":" + resource.access.version
-                : (resource.access.helmChart.contains(":") ? ":" + resource.access.helmChart.split(":")[1] : ""))
-            : resource.access.toOCI().repository
-              + (resource.access.toOCI().tag == "" ? "" : ":" + resource.access.toOCI().tag))}
-```
-
-Outcome: identical to E1.
+Writing the default `match` and the default
+[`imageReference`](#imagereference) into the entry gives the same outcome as
+E1. There is no reason to do so except as a starting point for a change.
 
 #### E3 — Helm charts only
 
