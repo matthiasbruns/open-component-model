@@ -300,7 +300,7 @@ The OCI uploader selects, on OCI registry targets only:
 | `LocalBlob` | the media type is an OCI manifest and the access has a `referenceName` | `resource.access.referenceName` verbatim (whatever it contains, including host/port/digest). E.g. `ghcr.io/org/image:v1` → `ghcr.io/org/image:v1`. |
 | anything else (Wget, S3, GitHub, …) | never | — |
 
-This is exactly the scope of the former `--upload-as ociArtifact`. An explicit
+This is exactly the scope of the deprecated `--upload-as ociArtifact`. An explicit
 `match` may select only resources the OCI uploader can upload: OCI images, Helm
 charts, and local blobs holding an OCI manifest. Selecting anything else fails
 the transfer with `oci uploader cannot upload access type …` or `… not an OCI
