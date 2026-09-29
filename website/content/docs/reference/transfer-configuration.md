@@ -488,7 +488,8 @@ configurations:
     match: >-
       target.type == "OCIRepository"
       && resource.access.isType("OCIImage")
-      && resource.access.toOCI().host.endsWith("docker.io")
+      && (resource.access.toOCI().host == "docker.io"
+        || resource.access.toOCI().host.endsWith(".docker.io"))
 ```
 
 | Resource | Outcome |
@@ -636,7 +637,7 @@ configurations:
 type: generic.config.ocm.software/v1
 configurations:
   - type: reference.uploader.transfer.config.ocm.software/v1alpha1
-    match: resource.access.isType("OCIImage") && resource.access.toOCI().host.endsWith("docker.io")
+    match: resource.access.isType("OCIImage") && (resource.access.toOCI().host == "docker.io" || resource.access.toOCI().host.endsWith(".docker.io"))
   - type: localblob.uploader.transfer.config.ocm.software/v1alpha1
 ```
 
