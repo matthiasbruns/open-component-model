@@ -68,9 +68,14 @@ to their full configuration type:
 
 Flag entries are appended **after** configuration-file entries, in the order the
 flags appear on the command line, so a flag entry cannot override a
-configuration-file entry. `--uploader localblob` replaces the removed
-`--copy-resources` flag. Flag entries are decoded and validated exactly like
+configuration-file entry. Flag entries are decoded and validated exactly like
 configuration-file entries.
+
+The deprecated `--copy-resources` and `--upload-as` flags still work: they are
+translated into uploader entries appended after all others (`--copy-resources`
+as `localblob`, `--upload-as ociArtifact` as `oci`, limited to OCI-manifest local
+blobs without `--copy-resources`). See
+[Deprecated flags]({{< relref "docs/how-to/migrate-from-upload-as.md#deprecated-flags" >}}).
 
 #### Examples
 
@@ -154,7 +159,6 @@ reference uploader excludes local blobs).
 | `--uploader http` | `match is required` |
 | `--uploader 'oci=resource.access.isType('` | `invalid match` |
 | `--uploader 'oci="x"'` | `must evaluate to a bool, got string` |
-| `--copy-resources` | `unknown flag: --copy-resources` |
 
 ## Transfer Settings
 
