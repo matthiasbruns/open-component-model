@@ -40,125 +40,15 @@ configurations:
 
 By default the CLI looks for configuration in `$HOME/.ocmconfig`. Pass
 `--config <file>` to use a different file. `--recursive` overrides the transfer
-config when set. `--uploader` adds uploader entries after the configured ones;
-`--uploader localblob` appends a catch-all
-`localblob.uploader.transfer.config.ocm.software/v1alpha1` entry.
+config when set.
 
-### `--uploader` Flag
+### Deprecated Flags
 
-The `--uploader` flag appends uploader entries after any entries in the
-configuration file. It accepts three value forms:
-
-| Form | Meaning |
-| --- | --- |
-| `<name>` | Uploader with its default `match` (`http` has none and needs a `match`). |
-| `<name>=<CEL match>` | Uploader with an explicit `match` expression. |
-| YAML/JSON mapping `{"type": "<name>", ...}` | Full uploader entry (same as a config-file entry). |
-
-`<name>` is a short name or a full configuration type, for example
-`localblob.uploader.transfer.config.ocm.software/v1alpha1`. Short names resolve
-to their full configuration type:
-
-| Short name | Configuration type |
-| --- | --- |
-| `http` | `http.uploader.transfer.config.ocm.software/v1alpha1` |
-| `localblob` | `localblob.uploader.transfer.config.ocm.software/v1alpha1` |
-| `oci` | `oci.uploader.transfer.config.ocm.software/v1alpha1` |
-| `reference` | `reference.uploader.transfer.config.ocm.software/v1alpha1` |
-
-Flag entries are appended **after** configuration-file entries, in the order the
-flags appear on the command line, so a flag entry cannot override a
-configuration-file entry. Flag entries are decoded and validated exactly like
-configuration-file entries.
-
-The deprecated `--copy-resources` and `--upload-as` flags still work: they are
-translated into uploader entries appended after all others (`--copy-resources`
-as `localblob`, `--upload-as ociArtifact` as `oci`, limited to OCI-manifest local
-blobs without `--copy-resources`). See
-[Deprecated flags]({{< relref "docs/how-to/migrate-from-upload-as.md#deprecated-flags" >}}).
-
-#### Examples
-
-##### copy everything as local blobs
-
-```shell
-ocm transfer cv --uploader localblob <src> <dst>
-```
-
-Equivalent to a config with a single default `localblob.uploader…` entry.
-
-##### OCI artifacts plus everything else copied
-
-```shell
-ocm transfer cv --uploader oci --uploader localblob <src> <dst>
-```
-
-Order matters: the OCI uploader is evaluated first; the localblob uploader
-catches the rest.
-
-##### OCI artifacts only
-
-```shell
-ocm transfer cv --uploader oci <src> <dst>
-```
-
-Resources the OCI uploader does not select follow the baseline (local blobs
-copied, everything else by reference).
-
-##### custom match on a named uploader
-
-```shell
-ocm transfer cv --uploader 'oci=resource.access.isType("OCIImage")' <src> <dst>
-```
-
-Only OCI images are uploaded as separate artifacts; Helm charts and local blobs
-follow the baseline.
-
-##### keep one image by reference, copy the rest
-
-```shell
-ocm transfer cv \
-  --uploader 'reference=resource.name == "nginx"' \
-  --uploader localblob \
-  <src> <dst>
-```
-
-##### combine with a config file
-
-```shell
-ocm transfer cv --config my.ocmconfig --uploader localblob <src> <dst>
-```
-
-Entries from `my.ocmconfig` are evaluated first; the `--uploader localblob`
-catch-all is appended after them.
-
-##### full YAML entry on the command line
-
-```shell
-ocm transfer cv --uploader '{"type": "oci", "imageReference": "${\"ghcr.io/mirror/\" + resource.access.toOCI().repository + \":\" + resource.access.toOCI().tag}"}' <src> <dst>
-```
-
-##### reference uploader with default match
-
-```shell
-ocm transfer cv --uploader reference <src> <dst>
-```
-
-Every non-local-blob resource stays by reference (the default `match` of the
-reference uploader excludes local blobs).
-
-##### errors
-
-| Flag value | Error contains |
-| --- | --- |
-| `--uploader unknown` | `unknown uploader "unknown" (available: http, localblob, oci, reference)` |
-| `--uploader ''` | `empty value` |
-| `--uploader 'reference='` | `empty match` |
-| `--uploader '{match: x}'` | `missing "type"` |
-| `--uploader '{type: oci, bogus: 1}'` | `unknown field "bogus"` |
-| `--uploader http` | `match is required` |
-| `--uploader 'oci=resource.access.isType('` | `invalid match` |
-| `--uploader 'oci="x"'` | `must evaluate to a bool, got string` |
+The `--copy-resources` and `--upload-as` flags are deprecated. They are
+translated into uploader configuration entries appended after all configured
+entries, and the CLI logs a warning with the equivalent configuration. See the
+[migration guide]({{< relref "docs/how-to/migrate-from-upload-as.md" >}}) for
+details.
 
 ## Transfer Settings
 
@@ -207,10 +97,9 @@ uploader and the resource.
 
 A resource that no uploader selects follows the baseline: local blobs are
 copied as local blobs; all other resources stay by reference (their access is
-unchanged in the target). `--uploader localblob` appends a catch-all
-`localblob.uploader.transfer.config.ocm.software/v1alpha1` after all configured
-uploaders, so every supported resource is copied. Declare more specific
-rules before broader ones.
+unchanged in the target). A catch-all
+`localblob.uploader.transfer.config.ocm.software/v1alpha1` entry copies
+every supported resource. Declare more specific rules before broader ones.
 
 #### `match`
 
@@ -411,7 +300,7 @@ The default selects the access types the uploader can handle. An explicit `match
 replaces the default entirely.
 
 A plain entry with no fields is equivalent to `copyMode: allResources` in old
-configs. `--uploader localblob` appends such an entry after all configured uploaders.
+configs.
 
 ### `reference.uploader.transfer.config.ocm.software/v1alpha1`
 
@@ -528,8 +417,8 @@ Outcomes:
 - **by reference**: not copied; the access is unchanged in the target.
 
 The baseline applies to resources no uploader selects: local blobs are copied
-as local blobs and all other resources stay by reference. `--uploader localblob`
-appends a catch-all `localblob.uploader…` that copies every supported resource.
+as local blobs and all other resources stay by reference. A catch-all
+`localblob.uploader…` entry copies every supported resource.
 
 #### E1 — default OCI uploader (replaces `--upload-as ociArtifact`)
 
@@ -538,8 +427,6 @@ type: generic.config.ocm.software/v1
 configurations:
   - type: oci.uploader.transfer.config.ocm.software/v1alpha1
 ```
-
-On the command line: `--uploader oci`.
 
 | Resource | Outcome |
 | --- | --- |
@@ -573,7 +460,7 @@ configurations:
 | `app`, `nginx`, `docs` | by reference |
 | `bundle`, `notes` | local blob |
 
-#### E4 — OCI-manifest local blobs only (replaces `--upload-as ociArtifact` without `--uploader localblob`)
+#### E4 — OCI-manifest local blobs only (replaces `--upload-as ociArtifact` without a local blob catch-all)
 
 ```yaml
 type: generic.config.ocm.software/v1
@@ -703,7 +590,7 @@ configurations:
 
 `chart` goes through GetHelmChart → ConvertHelmToOCI → OCIAddLocalResource;
 `docs` through DownloadWgetResource → OCIAddLocalResource.
-`ocm transfer cv --uploader localblob` without a config produces the same graph.
+A config with only a `localblob.uploader…` entry (no other uploaders) produces the same graph.
 
 #### E11 — OCI artifacts plus everything else copied (replaces `copyMode: allResources` + `uploadType: ociArtifact`)
 
