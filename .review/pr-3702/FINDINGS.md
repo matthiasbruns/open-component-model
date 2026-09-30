@@ -1,0 +1,16 @@
+# Review evidence for open-component-model/open-component-model#3702
+
+Reviewed head: `dc65b8520fa1871e0bd6e2c54d33546ad22072ba` (merge base `076c50f768eeb24e585b5d5705b46141489d7edf`).
+Every test/script asserts the correct behavior: it fails on the reviewed head and passes once fixed.
+
+| ID | Severity | Category | Location | Claim | Head | Base | How to run |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| C1 | major | correctness | bindings/go/transfer/v1alpha1/spec/localblob_uploader.go:15 | Default local blob match selects s3/v1 resources the uploader cannot copy, so --copy-resources now fails the whole transfer | reproduced | inconclusive | `cd bindings/go && go test -count=1 -run '^TestReviewPR3702_C1_S3V1WithLocalBlobCatchAll$' ./transfer/internal/...` |
+| C2 | minor | correctness | bindings/go/transfer/v1alpha1/spec/oci_uploader.go:39 | Default OCI match errors with `no such key: mediaType` for a local blob without mediaType instead of evaluating to false | reproduced | inconclusive | `cd bindings/go && go test -count=1 -run '^TestReviewPR3702_C2_LocalBlobWithoutMediaType$' ./transfer/internal/...` |
+| C3 | minor | correctness | bindings/go/transfer/v1alpha1/spec/oci_uploader.go:40 | `has(resource.access.referenceName)` accepts an empty referenceName, so the default imageReference becomes `<baseUrl>/` | reproduced | inconclusive | `cd bindings/go && go test -count=1 -run '^TestReviewPR3702_C3_EmptyReferenceName$' ./transfer/internal/...` |
+| S1 | major | correctness | bindings/go/transfer/internal/uploader_match.go:153 | Uploader CEL (match / imageReference) runs without cost limit or interrupt; controller now evaluates it during reconcile | reproduced | inconclusive | `cd bindings/go && go test -count=1 -run '^TestReviewPR3702_S1_UploaderCELHasNoCostLimit$' ./transfer/internal/...` |
+| D3 | major | docs | website/content/docs/how-to/air-gap-transfer.md:118 | Migrated docs replace --copy-resources with `--config ocmconfig.yaml`, which drops the user's .ocmconfig (credentials, resolvers) and docker auto-config | reproduced | not-reproduced | `bash .review/pr-3702/D3-config-flag-drops-home-config.sh` |
+| D1 | minor | docs | website/content/docs/reference/transfer-configuration.md:258 | `target.baseUrl + "/" + resource.name` examples drop target.subPath and push to the registry root | reproduced | inconclusive | `cd bindings/go && go test -count=1 -run '^TestReviewPR3702_D1_MetadataExampleDropsTargetSubPath$' ./transfer/internal/...` |
+| D2 | nit | docs | website/content/docs/reference/transfer-configuration.md:401 | Selection Examples model the target as baseUrl ghcr.io/target-org/ocm, subPath ""; the CLI yields baseUrl ghcr.io, subPath target-org/ocm | reproduced | inconclusive | `cd bindings/go && go test -count=1 -run '^TestReviewPR3702_D2_SelectionExamplesTargetSplit$' ./transfer/internal/...` |
+| D4 | nit | docs | website/content/docs/reference/transfer-configuration.md:571 | E9 "does not compile" row differs from the expression TestUploaderExamples executes | reproduced | inconclusive | `bash .review/pr-3702/D4-e9-invalid-match-doc-test-drift.sh` |
+| D5 | nit | docs | website/content/docs/how-to/air-gap-transfer.md:62 | Shell heredocs (`cat > ocmconfig.yaml << 'EOF'`) fenced as ```yaml | reproduced | not-reproduced | `bash .review/pr-3702/D5-shell-heredoc-in-yaml-fence.sh` |
