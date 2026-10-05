@@ -68,7 +68,7 @@ You deliver **two** RGDs inside one OCM component. The first (`podinfo`) defines
 kind: the application as its own Kubernetes API. The second (`system`) creates a `Podinfo`
 instance and sets its image to the one OCM localized into your registry. The OCM controllers
 deliver both the same way described in [Concept: Kubernetes Deployer]({{< relref "docs/concepts/kubernetes-deployer.md" >}}):
-a `Repository` and `Component` fetch the component, and one `Resource` + `Deployer` pair per
+a `Repository` and `Component` fetch the component, and one `Resource` + `NamespacedDeployer` pair per
 RGD applies it to the cluster. You then create a single `System` instance, and reconciliation
 converges to a running Podinfo.
 
@@ -84,7 +84,7 @@ with them.
 <summary>Architecture diagram</summary>
 
 (Continues from [Concept: Kubernetes Deployer]({{< relref "docs/concepts/kubernetes-deployer.md" >}}), which
-shows the `Repository` → `Component` → `Resource` → `Deployer` sequence that gets the RGD here.)
+shows the `Repository` → `Component` → `Resource` → `NamespacedDeployer` sequence that gets the RGD here.)
 
 ```mermaid
 flowchart TB
@@ -420,10 +420,11 @@ For more details, see [Configure Credentials for Controllers]({{< relref "/docs/
 ### Deliver both RGDs
 
 The bootstrap resources are OCM controller objects: a `Repository` and `Component` fetch the
-component from your registry; then a `Resource` + `Deployer` pair per RGD applies it to the
-cluster. The namespaced objects all live in `default`, so their cross-references and the
-verification commands below work no matter which namespace your kubectl context points at. The
-`Deployer` is cluster-scoped and finds its `Resource` through `resourceRef.namespace`.
+component from your registry; then a `Resource` + `NamespacedDeployer` pair per RGD applies it to the
+cluster. The objects all live in `default`, so their cross-references and the verification
+commands below work no matter which namespace your kubectl context points at. Each
+`NamespacedDeployer` applies as the `system-deployer` service account. RGDs are cluster-scoped, so
+that service account needs a `ClusterRole` for them.
 
 ```bash
 cat > bootstrap.yaml << 'EOF'
@@ -463,14 +464,43 @@ spec:
       resource:
         name: rgd-podinfo
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: system-deployer
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system-deployer
+rules:
+  - apiGroups: ["kro.run"]
+    resources: ["resourcegraphdefinitions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system-deployer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system-deployer
+subjects:
+  - kind: ServiceAccount
+    name: system-deployer
+    namespace: default
+---
 apiVersion: delivery.ocm.software/v1alpha1
-kind: Deployer
+kind: NamespacedDeployer
 metadata:
   name: system-deployer-podinfo
+  namespace: default
 spec:
   resourceRef:
     name: system-rgd-podinfo
-    namespace: default
+  serviceAccountName: system-deployer
 ---
 apiVersion: delivery.ocm.software/v1alpha1
 kind: Resource
@@ -486,13 +516,14 @@ spec:
         name: rgd-system
 ---
 apiVersion: delivery.ocm.software/v1alpha1
-kind: Deployer
+kind: NamespacedDeployer
 metadata:
   name: system-deployer-system
+  namespace: default
 spec:
   resourceRef:
     name: system-rgd-system
-    namespace: default
+  serviceAccountName: system-deployer
 EOF
 ```
 
@@ -656,11 +687,11 @@ dependencies from references. You saw that in this tutorial: because `app` refer
 same way, and one `System` instance drives the entire product.
 
 One thing is still hand-written: the delivery plumbing in `bootstrap.yaml`. Today you list a
-`Resource` + `Deployer` pair for every RGD yourself. For a dozen apps that is a wall of
+`Resource` + `NamespacedDeployer` pair for every RGD yourself. For a dozen apps that is a wall of
 boilerplate, and every version bump means editing that file again.
 
 The pattern that scales moves the plumbing *into* an RGD. An **installer RGD** templates those
-`Resource` + `Deployer` pairs itself, one per app, all sharing a single `Component` you pass
+`Resource` + `NamespacedDeployer` pairs itself, one per app, all sharing a single `Component` you pass
 in by name:
 
 ```yaml
@@ -679,13 +710,12 @@ resources:
   - id: appDeployer
     template:
       apiVersion: delivery.ocm.software/v1alpha1
-      kind: Deployer
+      kind: NamespacedDeployer
       metadata: { name: app-rgd }
       spec:
         resourceRef:
           name: ${appResource.metadata.name}
-          # Deployer is cluster-scoped, so the namespace of the namespaced Resource is required
-          namespace: ${schema.metadata.namespace}
+        serviceAccountName: ${schema.spec.serviceAccountName}   # needs RBAC for the app RGDs
     readyWhen:
       - ${appDeployer.status.conditions.exists(c, c.type == "Ready" && c.status == "True")}
 ```
@@ -696,7 +726,7 @@ reconciles. No more editing bootstrap files by hand.
 
 This is not a new tool. It is the same `delivery.ocm.software/Resource` you already used for
 the localized image, now applied to delivery itself. There is no layering limit: an RGD can
-create other RGDs, which is exactly what the installer's `Resource` + `Deployer` pairs do for
+create other RGDs, which is exactly what the installer's `Resource` + `NamespacedDeployer` pairs do for
 the app RGDs. The one thing it cannot do is apply itself: something has to deliver the
 installer RGD once, and that stays in `bootstrap.yaml`.
 
