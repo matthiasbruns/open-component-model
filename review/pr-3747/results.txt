@@ -1,0 +1,128 @@
+Reviewed PR head: 35a8fd76eb4f49e1156659a9d6a8b8a47a38da76
+go version go1.27.1 darwin/arm64
+SOURCE: module selector is certified, not an explicit version
+SOURCE: CLI boot-time FIPS status is DEBUG
+SOURCE: opening digest table says on requires SHA-256/SHA-512; later table says on warns
+SOURCE: CI has no fips140=only run
+=== RUN   TestResolveBinary_CosignOnPathFIPSBuild
+=== RUN   TestResolveBinary_CosignOnPathFIPSBuild/only:_FIPS_build_accepted
+2026/10/05 10:01:07 WARN could not determine cosign version on PATH; if signing fails, verify cosign is >= v3.0.4 or remove it from PATH to trigger auto-download path=/fake/bin/cosign error="run cosign version: fork/exec /fake/bin/cosign: no such file or directory"
+=== RUN   TestResolveBinary_CosignOnPathFIPSBuild/only:_GOFIPS140=latest_rejected
+2026/10/05 10:01:07 WARN could not determine cosign version on PATH; if signing fails, verify cosign is >= v3.0.4 or remove it from PATH to trigger auto-download path=/fake/bin/cosign error="run cosign version: fork/exec /fake/bin/cosign: no such file or directory"
+=== RUN   TestResolveBinary_CosignOnPathFIPSBuild/only:_no_GOFIPS140_rejected
+2026/10/05 10:01:07 WARN could not determine cosign version on PATH; if signing fails, verify cosign is >= v3.0.4 or remove it from PATH to trigger auto-download path=/fake/bin/cosign error="run cosign version: fork/exec /fake/bin/cosign: no such file or directory"
+=== RUN   TestResolveBinary_CosignOnPathFIPSBuild/only:_unreadable_build_info_rejected
+2026/10/05 10:01:07 WARN could not determine cosign version on PATH; if signing fails, verify cosign is >= v3.0.4 or remove it from PATH to trigger auto-download path=/fake/bin/cosign error="run cosign version: fork/exec /fake/bin/cosign: no such file or directory"
+=== RUN   TestResolveBinary_CosignOnPathFIPSBuild/on:_non-FIPS_build_accepted_after_the_check
+2026/10/05 10:01:07 WARN could not determine cosign version on PATH; if signing fails, verify cosign is >= v3.0.4 or remove it from PATH to trigger auto-download path=/fake/bin/cosign error="run cosign version: fork/exec /fake/bin/cosign: no such file or directory"
+=== RUN   TestResolveBinary_CosignOnPathFIPSBuild/off:_build_information_not_read
+2026/10/05 10:01:07 WARN could not determine cosign version on PATH; if signing fails, verify cosign is >= v3.0.4 or remove it from PATH to trigger auto-download path=/fake/bin/cosign error="run cosign version: fork/exec /fake/bin/cosign: no such file or directory"
+--- PASS: TestResolveBinary_CosignOnPathFIPSBuild (0.01s)
+    --- PASS: TestResolveBinary_CosignOnPathFIPSBuild/only:_FIPS_build_accepted (0.00s)
+    --- PASS: TestResolveBinary_CosignOnPathFIPSBuild/only:_GOFIPS140=latest_rejected (0.00s)
+    --- PASS: TestResolveBinary_CosignOnPathFIPSBuild/only:_no_GOFIPS140_rejected (0.00s)
+    --- PASS: TestResolveBinary_CosignOnPathFIPSBuild/only:_unreadable_build_info_rejected (0.00s)
+    --- PASS: TestResolveBinary_CosignOnPathFIPSBuild/on:_non-FIPS_build_accepted_after_the_check (0.00s)
+    --- PASS: TestResolveBinary_CosignOnPathFIPSBuild/off:_build_information_not_read (0.00s)
+=== RUN   TestResolveBinary_NoCosignOnPath
+=== RUN   TestResolveBinary_NoCosignOnPath/only
+=== RUN   TestResolveBinary_NoCosignOnPath/on
+=== RUN   TestResolveBinary_NoCosignOnPath/off
+--- PASS: TestResolveBinary_NoCosignOnPath (0.00s)
+    --- PASS: TestResolveBinary_NoCosignOnPath/only (0.00s)
+    --- PASS: TestResolveBinary_NoCosignOnPath/on (0.00s)
+    --- PASS: TestResolveBinary_NoCosignOnPath/off (0.00s)
+=== RUN   TestReviewFIPSEvidenceRealBinary
+=== RUN   TestReviewFIPSEvidenceRealBinary/certified
+    review_fips_evidence_test.go:34: requested=certified DefaultGODEBUG=fips140=on
+    review_fips_evidence_test.go:34: requested=certified GOFIPS140=v1.0.0-c2097c7c
+    review_fips_evidence_test.go:39: current cosign metadata guard ACCEPTED this real Go binary
+    review_fips_evidence_test.go:50: mode=on enabled=true module=v1.0.0
+    review_fips_evidence_test.go:50: mode=only enabled=true module=v1.0.0
+    review_fips_evidence_test.go:50: mode=off enabled=false module=v1.0.0
+=== RUN   TestReviewFIPSEvidenceRealBinary/v1.26.0
+    review_fips_evidence_test.go:34: requested=v1.26.0 DefaultGODEBUG=fips140=on
+    review_fips_evidence_test.go:34: requested=v1.26.0 GOFIPS140=v1.26.0
+    review_fips_evidence_test.go:39: current cosign metadata guard ACCEPTED this real Go binary
+    review_fips_evidence_test.go:50: mode=on enabled=true module=v1.26.0
+    review_fips_evidence_test.go:50: mode=only enabled=true module=v1.26.0
+    review_fips_evidence_test.go:50: mode=off enabled=false module=v1.26.0
+--- PASS: TestReviewFIPSEvidenceRealBinary (0.69s)
+    --- PASS: TestReviewFIPSEvidenceRealBinary/certified (0.35s)
+    --- PASS: TestReviewFIPSEvidenceRealBinary/v1.26.0 (0.35s)
+PASS
+ok  	ocm.software/open-component-model/bindings/go/sigstore/signing/handler/internal	1.023s
+=== RUN   TestBinary_Resolve_FIPSMode
+=== RUN   TestBinary_Resolve_FIPSMode/only:_FIPS-mode_libgcrypt_accepted
+=== RUN   TestBinary_Resolve_FIPSMode/only:_non-FIPS_libgcrypt_rejected
+=== RUN   TestBinary_Resolve_FIPSMode/only:_no_fips-mode_line_rejected
+=== RUN   TestBinary_Resolve_FIPSMode/only:_gpgconf_missing_rejected
+2026/10/05 10:01:09 WARN gpgconf not found on PATH; gpg-agents of temporary GnuPG home directories are not stopped explicitly and may keep unlocked key material until they exit
+=== RUN   TestBinary_Resolve_FIPSMode/on:_non-FIPS_libgcrypt_accepted_after_the_check
+=== RUN   TestBinary_Resolve_FIPSMode/on:_gpgconf_missing_accepted
+2026/10/05 10:01:09 WARN gpgconf not found on PATH; gpg-agents of temporary GnuPG home directories are not stopped explicitly and may keep unlocked key material until they exit
+=== RUN   TestBinary_Resolve_FIPSMode/off:_libgcrypt_not_queried
+--- PASS: TestBinary_Resolve_FIPSMode (0.00s)
+    --- PASS: TestBinary_Resolve_FIPSMode/only:_FIPS-mode_libgcrypt_accepted (0.00s)
+    --- PASS: TestBinary_Resolve_FIPSMode/only:_non-FIPS_libgcrypt_rejected (0.00s)
+    --- PASS: TestBinary_Resolve_FIPSMode/only:_no_fips-mode_line_rejected (0.00s)
+    --- PASS: TestBinary_Resolve_FIPSMode/only:_gpgconf_missing_rejected (0.00s)
+    --- PASS: TestBinary_Resolve_FIPSMode/on:_non-FIPS_libgcrypt_accepted_after_the_check (0.00s)
+    --- PASS: TestBinary_Resolve_FIPSMode/on:_gpgconf_missing_accepted (0.00s)
+    --- PASS: TestBinary_Resolve_FIPSMode/off:_libgcrypt_not_queried (0.00s)
+PASS
+ok  	ocm.software/open-component-model/bindings/go/gpg/signing/handler/internal/gpgbinary	0.219s
+
+Digest checks in on mode
+=== RUN   TestValidateDigestHashAlgorithms
+=== RUN   TestValidateDigestHashAlgorithms/resource_SHA-256_(lowercase,_no_dash)
+=== RUN   TestValidateDigestHashAlgorithms/resource_SHA-512
+=== RUN   TestValidateDigestHashAlgorithms/resource_excluded_from_signature
+=== RUN   TestValidateDigestHashAlgorithms/resource_MD5
+=== RUN   TestValidateDigestHashAlgorithms/resource_SHA-1
+=== RUN   TestValidateDigestHashAlgorithms/MD5_behind_an_incomplete_digest_on_another_resource
+=== RUN   TestValidateDigestHashAlgorithms/reference_SHA-512
+=== RUN   TestValidateDigestHashAlgorithms/reference_SHA-1
+=== RUN   TestValidateDigestHashAlgorithms/reference_NO-DIGEST
+--- PASS: TestValidateDigestHashAlgorithms (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_SHA-256_(lowercase,_no_dash) (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_SHA-512 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_excluded_from_signature (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_MD5 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_SHA-1 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/MD5_behind_an_incomplete_digest_on_another_resource (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/reference_SHA-512 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/reference_SHA-1 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/reference_NO-DIGEST (0.00s)
+=== RUN   TestReviewFIPSEvidenceDigestRuntimeMode
+    review_fips_evidence_test.go:24: enabled=true enforced=false MD5 reference IsSafelyDigestible=<nil>
+--- PASS: TestReviewFIPSEvidenceDigestRuntimeMode (0.00s)
+PASS
+ok  	ocm.software/open-component-model/bindings/go/signing	0.316s
+
+Digest checks in only mode
+=== RUN   TestValidateDigestHashAlgorithms
+=== RUN   TestValidateDigestHashAlgorithms/resource_SHA-256_(lowercase,_no_dash)
+=== RUN   TestValidateDigestHashAlgorithms/resource_SHA-512
+=== RUN   TestValidateDigestHashAlgorithms/resource_excluded_from_signature
+=== RUN   TestValidateDigestHashAlgorithms/resource_MD5
+=== RUN   TestValidateDigestHashAlgorithms/resource_SHA-1
+=== RUN   TestValidateDigestHashAlgorithms/MD5_behind_an_incomplete_digest_on_another_resource
+=== RUN   TestValidateDigestHashAlgorithms/reference_SHA-512
+=== RUN   TestValidateDigestHashAlgorithms/reference_SHA-1
+=== RUN   TestValidateDigestHashAlgorithms/reference_NO-DIGEST
+--- PASS: TestValidateDigestHashAlgorithms (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_SHA-256_(lowercase,_no_dash) (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_SHA-512 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_excluded_from_signature (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_MD5 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/resource_SHA-1 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/MD5_behind_an_incomplete_digest_on_another_resource (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/reference_SHA-512 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/reference_SHA-1 (0.00s)
+    --- PASS: TestValidateDigestHashAlgorithms/reference_NO-DIGEST (0.00s)
+=== RUN   TestReviewFIPSEvidenceDigestRuntimeMode
+    review_fips_evidence_test.go:24: enabled=true enforced=true MD5 reference IsSafelyDigestible=unsupported digest hash algorithm "MD5" in componentReference for : (use SHA-256 or SHA-512)
+--- PASS: TestReviewFIPSEvidenceDigestRuntimeMode (0.00s)
+PASS
+ok  	ocm.software/open-component-model/bindings/go/signing	0.108s

@@ -1,0 +1,3 @@
+task: Task "tools:golangci-lint/install" is up to date
+[conformance/scenarios/sovereign/components/notes] 0 issues.
+[bindings/go] 0 issues.

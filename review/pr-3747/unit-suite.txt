@@ -1,0 +1,389 @@
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-component-version internal/testplugin-component-version/main.go
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-resource internal/testplugin-resource/main.go
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-input internal/testplugin-input/main.go
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-digester internal/testplugin-digester/main.go
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-blobtransformer internal/testplugin-blobtransformer/main.go
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-signinghandler internal/testplugin-signinghandler/main.go
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-component-lister internal/testplugin-component-lister/main.go
+task: [bindings/go:build/plugins] go build -o tmp/testdata/test-plugin-credential-repository internal/testplugin-credential-repository/main.go
+task: [bindings/go:test] go test -short -skip "Integration" -count=1 -coverprofile=coverage.unit.out -covermode=atomic $(go list ./... | grep -v /integration | grep -v /kubernetes/controller/test/e2e) 
+
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob	0.218s	coverage: 97.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob/compression	0.224s	coverage: 93.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob/direct	0.209s	coverage: 94.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob/direct/serial	0.220s	coverage: 93.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob/filesystem	0.298s	coverage: 86.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob/filesystem/spec/access	0.205s	coverage: 100.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/blob/filesystem/spec/access/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob/inmemory	0.207s	coverage: 91.9% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/blob/inmemory/cache	0.256s	coverage: 93.8% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/blob/transformer	[no test files]
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/cel	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cel/expression/fieldpath	0.217s	coverage: 74.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cel/expression/inspector	0.230s	coverage: 99.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cel/expression/parser	0.228s	coverage: 98.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cel/expression/variable	0.225s	coverage: 42.9% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cel/jsonschema		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cel/jsonschema/decl		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cel/jsonschema/decl/check	0.215s	coverage: 75.6% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cel/jsonschema/provider	0.215s	coverage: 40.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cel/jsonschema/santhosh-tekuri/v6	0.286s	coverage: 77.1% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd	2.164s	coverage: 95.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/add		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/add/component-version	0.517s	coverage: 6.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/configuration	0.216s	coverage: 75.9% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/describe		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/describe/types	0.729s	coverage: 81.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/download		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/download/plugin	0.772s	coverage: 68.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/download/resource	0.976s	coverage: 73.1% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/download/shared		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/generate		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/generate/docs		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/get		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/get/component-version	0.195s	coverage: 1.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/get/config	0.688s	coverage: 62.1% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/cli/cmd/internal/cmd	[no test files]
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/internal/test		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/plugins		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/plugins/get		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/plugins/list		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/setup	0.670s	coverage: 52.1% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/setup/hooks		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/sign		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/sign/component-version		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/transfer		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/transfer/component-version	1.226s	coverage: 77.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/verify		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/cmd/verify/component-version		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/cmd/version	0.210s	coverage: 80.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/context	0.208s	coverage: 73.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/flags/enum	0.186s	coverage: 91.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/flags/file	0.193s	coverage: 84.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/flags/log	0.189s	coverage: 84.6% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/oidcflow	0.215s	coverage: 42.2% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/credentials/oci		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/git	0.257s	coverage: 72.2% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/github		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/gpg		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/input/dir		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/input/file		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/input/helm	0.457s	coverage: 81.8% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/input/utf8		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/location	0.205s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/oci	0.231s	coverage: 33.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/oidc	0.197s	coverage: 39.1% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/rsa		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/s3	0.215s	coverage: 72.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/plugin/builtin/wget	0.213s	coverage: 72.2% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/plugin/spec/config/v2alpha1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/render		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/render/graph		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/render/graph/list	0.192s	coverage: 63.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/render/graph/tree	0.202s	coverage: 87.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/render/progress	0.296s	coverage: 87.9% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/render/progress/bar	0.312s	coverage: 91.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/repository/ocm	0.214s	coverage: 55.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/sbom	0.211s	coverage: 32.6% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/subsystem	0.197s	coverage: 20.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/sync	0.201s	coverage: 100.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/cli/internal/transformers		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/cli/internal/versioncheck	0.445s	coverage: 83.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/configuration	0.168s	coverage: 66.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/configuration/checksum/http/v1alpha1/spec	0.192s	coverage: 71.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/configuration/extract/v1alpha1/spec	0.187s	coverage: 83.3% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/configuration/filesystem/v1alpha1/spec		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/configuration/generic/v1/spec	0.211s	coverage: 60.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/configuration/ocm/v1	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/configuration/ocm/v1/runtime	0.186s	coverage: 39.7% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/configuration/ocm/v1/spec		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/configuration/resolvers/v1alpha1/spec	0.185s	coverage: 52.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/configuration/versioning/v1alpha1/spec	0.184s	coverage: 66.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/constructor	0.246s	coverage: 85.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/constructor/internal/log		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/constructor/runtime	0.192s	coverage: 53.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/constructor/spec/v1	0.208s	coverage: 44.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/credentials	0.204s	coverage: 91.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/credentials/spec/config/runtime	0.189s	coverage: 54.7% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/credentials/spec/config/v1		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/ctf	0.293s	coverage: 74.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/ctf/index/v1	0.173s	coverage: 98.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/dag	0.190s	coverage: 92.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/dag/sync	0.497s	coverage: 84.3% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/descriptor/normalisation		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/descriptor/normalisation/engine/jcs	0.188s	coverage: 71.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/descriptor/normalisation/json/v4alpha1	0.200s	coverage: 83.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/descriptor/runtime	0.211s	coverage: 56.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/descriptor/runtime/labels/artifactref/v1alpha1	0.203s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/descriptor/v2	0.203s	coverage: 36.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/examples	1.554s	coverage: [no statements]
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/generator	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/generator/jsonschemagen	0.205s	coverage: 71.3% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/generator/jsonschemagen/cmd		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/generator/jsonschemagen/test		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/generator/jsonschemagen/writer		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/generator/ocmtypegen	0.189s	coverage: 55.1% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/generator/ocmtypegen/test		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/generator/universe	0.912s	coverage: 77.4% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/git	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/input	0.589s	coverage: 97.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/internal/download	1.398s	coverage: 85.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/internal/endpoint	0.212s	coverage: 87.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/repository	0.730s	coverage: 78.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/git/spec/access		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/spec/access/v1	0.188s	coverage: 48.3% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/git/spec/credentials		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/spec/credentials/v1	0.195s	coverage: 81.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/spec/identity/v1	0.194s	coverage: 80.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/git/spec/input		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/git/spec/input/v1	0.191s	coverage: 28.6% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/github	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/digest	0.243s	coverage: 88.9% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/internal	0.189s	coverage: 58.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/internal/download	0.243s	coverage: 86.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/repository/resource	0.253s	coverage: 87.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/spec/access	0.190s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/spec/access/v1	0.195s	coverage: 33.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/spec/credentials	0.194s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/spec/credentials/v1	0.190s	coverage: 83.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/github/transformation	0.235s	coverage: 88.8% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/github/transformation/spec/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/gpg	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/gpg/signing/handler	0.193s	coverage: 83.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/gpg/signing/handler/internal/credentials	0.192s	coverage: 71.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/gpg/signing/handler/internal/gpgbinary	0.203s	coverage: 83.3% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/gpg/spec/credentials		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/gpg/spec/credentials/v1alpha1	0.186s	coverage: 51.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/gpg/spec/identity/v1alpha1	0.182s	coverage: 73.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/gpg/spec/signing/v1alpha1	0.183s	coverage: 59.3% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/helm	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/blob	0.187s	coverage: 84.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/digest	0.470s	coverage: 60.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/input	0.501s	coverage: 61.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/internal	0.184s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/internal/download	0.764s	coverage: 85.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/internal/oci	0.380s	coverage: 81.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/repository/resource	1.612s	coverage: 77.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/spec/access	0.188s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/spec/access/v1	0.189s	coverage: 62.5% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/helm/spec/credentials		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/spec/credentials/v1	0.191s	coverage: 88.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/spec/identity/v1	0.202s	coverage: 88.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/helm/spec/input		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/spec/input/v1	0.182s	coverage: 25.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/helm/transformation	0.506s	coverage: 82.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/helm/transformation/spec/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/http	0.370s	coverage: 97.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/http/internal/retry	9.263s	coverage: 77.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/http/spec/config/v1alpha1	0.211s	coverage: 65.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/input/dir	0.247s	coverage: 18.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/input/dir/spec/v1	0.212s	coverage: 11.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/input/file	0.244s	coverage: 50.9% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/input/file/spec/v1	0.203s	coverage: 16.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/input/utf8	0.220s	coverage: 64.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/input/utf8/spec/v1		coverage: 0.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/kubernetes/controller	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/api/v1alpha1	0.387s	coverage: 8.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/cmd		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/cel		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/cel/conversion	0.244s	coverage: 58.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/cel/functions	0.385s	coverage: 81.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/applyset	0.424s	coverage: 90.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/component	31.454s	coverage: 71.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/deployer	46.376s	coverage: 81.4% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/deployer/cache		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/deployer/dynamic		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/discovery	30.046s	coverage: 73.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/replication	34.267s	coverage: 70.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/repository	31.195s	coverage: 74.6% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/controller/resource	32.880s	coverage: 65.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/discovery	3.016s	coverage: 91.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/event	0.421s	coverage: 100.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/metrics		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/ocm	0.607s	coverage: 38.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/resolution	0.577s	coverage: 72.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/resolution/workerpool	0.657s	coverage: 65.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/setup	0.496s	coverage: 0.0% of statements [no tests to run]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/status	0.368s	coverage: 44.4% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/test		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/util		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/internal/verification	0.343s	coverage: 88.6% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/kubernetes/controller/pkg/configuration	0.370s	coverage: 89.2% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/kubernetes/controller/test/utils		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci	1.545s	coverage: 79.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/blob	0.188s	coverage: 59.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/cache	1.191s	coverage: 88.6% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/cel/functions	0.240s	coverage: 91.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/compref	0.252s	coverage: 85.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/credentials	0.465s	coverage: 77.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/ctf	1.057s	coverage: 83.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/attestation	1.000s	coverage: 90.5% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/oci/internal/digest		coverage: 0.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/oci/internal/fetch	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/identity	0.231s	coverage: 87.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/introspection	0.221s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/lister	0.212s	coverage: 83.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/lister/component	0.211s	coverage: 92.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/log	0.269s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/pack	0.390s	coverage: 83.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/oci/internal/policy	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/remotestore	0.286s	coverage: 82.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/internal/validate	0.243s	coverage: 94.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/looseref	0.221s	coverage: 90.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/repository	0.272s	coverage: 85.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/repository/provider	0.545s	coverage: 52.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/repository/resource	0.361s	coverage: 50.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/resolver/url	7.170s	coverage: 81.9% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/oci/spec	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/access	0.245s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/access/v1	0.225s	coverage: 34.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/annotations	0.236s	coverage: 92.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/config/component	0.260s	coverage: 87.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/credentials	0.248s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/credentials/v1	0.250s	coverage: 44.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/descriptor	0.245s	coverage: 73.5% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/oci/spec/identity		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/identity/v1	0.238s	coverage: 84.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/index/component/v1	0.241s	coverage: 75.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/oci/spec/layout	[no test files]
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/oci/spec/repository		coverage: 0.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/oci/spec/repository/path	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/ctf	0.219s	coverage: 52.8% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/oci		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/oci/spec/transformation/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/stream	0.252s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/tar	0.345s	coverage: 85.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/oci/transformer	0.279s	coverage: 61.8% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/plugin	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/client/sdk	1.593s	coverage: 75.9% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/dummytype		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/dummytype/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-blobtransformer		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-component-lister		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-component-version		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-credential-repository		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-digester		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-input		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-resource		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/internal/testplugin-signinghandler		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager	3.626s	coverage: 86.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/blobtransformer/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/componentlister/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/credentialplugin/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/credentials/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/digestprocessor/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/input/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/ocmrepository/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/resource/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/contracts/signing/v1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/endpoints		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/blobs	0.222s	coverage: 100.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/blobtransformer	0.721s	coverage: 75.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/componentlister	1.394s	coverage: 60.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/componentversionrepository	1.404s	coverage: 50.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialplugin	0.252s	coverage: 75.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialrepository	0.256s	coverage: 44.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/credentialtyperepository	0.224s	coverage: 89.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/digestprocessor	1.366s	coverage: 83.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/input	1.251s	coverage: 67.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/plugins	0.263s	coverage: 70.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/resource	1.149s	coverage: 52.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/plugin/manager/registries/signinghandler	1.402s	coverage: 70.1% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/types		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/plugin/manager/types/runtime		coverage: 0.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/plugin/manager/types/spec	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/repository	0.232s	coverage: 91.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/repository/component/fallback/v1	0.239s	coverage: 40.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/repository/component/pathmatcher/v1alpha1	0.239s	coverage: 86.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/repository/component/resolvers	0.241s	coverage: 85.4% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/rsa	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/rsa/signing/handler	8.567s	coverage: 88.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/rsa/signing/handler/internal/credentials	1.577s	coverage: 81.2% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/rsa/signing/handler/internal/pem		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/rsa/signing/handler/internal/rfc2253	0.219s	coverage: 92.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/rsa/signing/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/rsa/spec/credentials		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/rsa/spec/credentials/v1	0.256s	coverage: 82.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/rsa/spec/identity/v1	0.221s	coverage: 73.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/runtime	0.282s	coverage: 84.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/runtime/internal/bimap	0.259s	coverage: 97.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/runtime/versioning	0.254s	coverage: 82.9% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/s3	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/input	0.324s	coverage: 86.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/internal/download	0.410s	coverage: 96.9% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/repository	0.335s	coverage: 75.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/spec/access	0.245s	coverage: 96.9% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/spec/access/v1	0.237s	coverage: 26.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/spec/access/v2	0.236s	coverage: 57.1% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/s3/spec/credentials		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/spec/credentials/v1	0.271s	coverage: 87.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/spec/identity/v1	0.239s	coverage: 90.8% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/s3/spec/input		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/s3/spec/input/v2		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/s3/transformation	1.126s	coverage: 82.4% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/s3/transformation/spec/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/signing	0.271s	coverage: 94.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/signing/v1alpha1/spec	0.263s	coverage: 78.5% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/sigstore	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/sigstore/signing/handler	0.357s	coverage: 86.7% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/sigstore/signing/handler/internal	1.171s	coverage: 57.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/sigstore/signing/v1alpha1	0.253s	coverage: 79.4% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/oidcidentitytoken		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/oidcidentitytoken/v1alpha1	0.236s	coverage: 71.9% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/trustedroot		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/sigstore/spec/credentials/trustedroot/v1alpha1	0.242s	coverage: 71.9% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/sigstore/spec/identity/signer/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/sigstore/spec/identity/verifier/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer	0.418s	coverage: 84.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/internal	0.959s	coverage: 92.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload	0.391s	coverage: 3.5% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/artifactory	0.584s	coverage: 93.8% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/artifactory/artifactorytest		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/artifactory/internal/api		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/artifactory/internal/generic		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/artifactory/internal/helm		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/artifactory/internal/npm		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/chart	0.399s	coverage: 68.8% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/client	0.263s	coverage: 44.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/nexus	0.664s	coverage: 87.8% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/nexus/internal/api		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/nexus/internal/helm		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/nexus/internal/maven	0.383s	coverage: 26.7% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/nexus/internal/npm		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/nexus/internal/raw		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/nexus/nexustest		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/uploadpath		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/internal/repositoryupload/uploadtest		coverage: 0.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transfer/transformation/spec/v1alpha1		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transfer/v1alpha1/spec	0.236s	coverage: 76.9% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/transform	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transform/graph	0.252s	coverage: 100.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transform/graph/analysis		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transform/graph/builder	0.335s	coverage: 86.9% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transform/graph/env	0.298s	coverage: 88.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transform/graph/internal/testutils		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transform/graph/runtime	0.277s	coverage: 46.3% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transform/graph/runtime/resolver	0.294s	coverage: 85.1% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/transform/spec/v1alpha1	0.256s	coverage: 0.0% of statements [no tests to run]
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/transform/spec/v1alpha1/meta		coverage: 0.0% of statements
+[bindings/go:test] ?   	ocm.software/open-component-model/bindings/go/wget	[no test files]
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/checksum	0.234s	coverage: 68.7% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/wget/checksum/httpverify		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/httpauth	0.257s	coverage: 34.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/input	0.264s	coverage: 89.2% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/internal/download	0.302s	coverage: 77.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/repository	0.317s	coverage: 89.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/wget/spec/access		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/spec/access/v1	0.263s	coverage: 48.6% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/wget/spec/credentials		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/spec/credentials/v1	0.237s	coverage: 86.7% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/wget/spec/identity		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/spec/identity/v1	0.227s	coverage: 81.0% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/wget/spec/input		coverage: 0.0% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/spec/input/v1	0.243s	coverage: 47.4% of statements
+[bindings/go:test] ok  	ocm.software/open-component-model/bindings/go/wget/transformation	7.054s	coverage: 70.9% of statements
+[bindings/go:test] 	ocm.software/open-component-model/bindings/go/wget/transformation/spec/v1alpha1		coverage: 0.0% of statements
+task: [bindings/go:test] grep -v 'zz_generated\.' coverage.unit.out > coverage.unit.out.tmp && mv coverage.unit.out.tmp coverage.unit.out
