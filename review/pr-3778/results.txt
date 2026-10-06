@@ -1,0 +1,32 @@
+Reviewed head: c17740f88c515353cd486a5c31374be7618fe41e
+Evidence branch: review/pr-3778-sha512-transfer
+Go: go1.27.1 darwin/arm64
+
+From repository root:
+rtk proxy sh review/pr-3778/repro.sh
+Exit 1; both evidence tests fail, confirming the findings:
+- TestReview_SHA512Transfer: after HEAD selects SHA-512 and DownloadResource's
+  reader verifies successfully, OCI/CTF AddLocalResource fails with
+  "failed to create resource blob: resource blob digest mismatch" because the
+  filesystem blob reports sha256 while the resource digest is SHA-512.
+- TestReview_ConflictingDigestPrefix: HashAlgorithm SHA-256 with
+  Value sha512:<SHA-256 hex> is silently accepted; expected an error, got nil.
+
+From bindings/go:
+rtk proxy go test ./s3/... ./repository -skip 'Integration|TestReview_' -count=1
+Exit 0; all existing affected unit tests passed. Integration tests excluded.
+
+From repository root:
+rtk proxy task tools:lint
+Exit 0; bindings/go and conformance notes report 0 issues. Run after final
+evidence test changes.
+
+Initial sandboxed test invocation failed to access Go's cache. The tests above
+were rerun with approved elevated execution and completed.
+
+GitHub recheck: same head; Unit Tests, Integration Tests and Go lint SUCCESS.
+One unresolved CodeRabbit documentation thread at resource-repositories.md:273
+about distinguishing checksum defaults by client/version. No replies/resolutions.
+
+Evidence prepared for Matthias's fork following explicit authorization to push.
+No GitHub review comments posted and no author-branch edits.
