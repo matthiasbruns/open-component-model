@@ -1,0 +1,45 @@
+PR: https://github.com/open-component-model/open-component-model/pull/3779
+Tested head: 60bf33ffc6cb89b42f3f7fa441eb07b8b985125e
+
+This branch adds review evidence only; no production code is changed.
+
+Reproduce from the repository root:
+  sh review/pr-3779-object-tracking.sh
+
+Equivalent command from bindings/go:
+  go test ./kubernetes/controller/internal/controller/deployer -ginkgo.focus='Review evidence: NamespacedDeployer object tracking' -count=1
+
+Result: exit 1; 2 evidence specs failed, 24 specs skipped.
+
+Inventory evidence:
+  Both ConfigMaps were created successfully in the deployer's namespace, with
+  nonempty live UIDs, and the deployer reached Ready. Its inventory was:
+  [{APIVersion:v1 Kind:ConfigMap Name:review-second Namespace: UID:}]
+  The assertion expecting two references failed (actual length: 1).
+
+Deletion evidence:
+  A same-namespace ConfigMap was deployed and its controller owner UID matched
+  the deployer UID. After deleting the service account and then the deployer,
+  the controller repeatedly reported:
+  failed to get service account <namespace>/deployer-sa: serviceaccounts "deployer-sa" not found
+  The deployer retained delivery.ocm.software/applyset-prune and
+  delivery.ocm.software/watch finalizers throughout the 5-second assertion.
+  Restoring the service account during test cleanup allowed deletion to finish.
+
+Cause:
+  applyWithApplySet defaults and applies deep copies of the manifests, while
+  reconcileDeployment builds status.deployed from the original manifests.
+  Empty UIDs cause references to overwrite each other, and an empty namespace
+  makes skipPrune classify an actually local child as outside the namespace.
+  The inventory defect existed in the shared Deployer path before this PR;
+  the new skipPrune check makes that defect affect NamespacedDeployer deletion.
+
+Comparison checks on the same head:
+  cd bindings/go
+  go test ./kubernetes/controller/internal/controller/deployer -ginkgo.focus='NamespacedDeployer Controller' -count=1
+  Result: exit 0, package passed in 9.728s.
+
+  From repository root: task tools:lint
+  Result: exit 0; bindings/go and sovereign notes module both reported 0 issues.
+
+The evidence tests intentionally fail until the underlying behavior is fixed.
