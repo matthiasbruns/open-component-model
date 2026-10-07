@@ -21,7 +21,7 @@ var VersionedType = runtime.NewVersionedType(TSACredentialsType, Version)
 // certificates supplied here are the exclusive trust anchor for the TSA's token.
 // They are never taken from the signature itself, so a signer cannot assert its
 // own TSA trust anchor. Without a matching TSACredentials entry, timestamp
-// verification degrades to structural-only mode (see [ADR 0030]).
+// verification degrades to structural-only mode (see [ADR 0032]).
 //
 // The root certificates have two forms: inline PEM content (RootCertsPEM) or a
 // file path (RootCertsPEMFile). The inline form takes precedence when both are
@@ -35,7 +35,7 @@ var VersionedType = runtime.NewVersionedType(TSACredentialsType, Version)
 // +ocm:typegen=true
 // +ocm:jsonschema-gen=true
 //
-// [ADR 0030]: https://github.com/open-component-model/open-component-model/blob/main/docs/adr/0030_rfc3161_timestamping.md
+// [ADR 0032]: https://github.com/open-component-model/open-component-model/blob/main/docs/adr/0032_rfc3161_timestamping.md
 type TSACredentials struct {
 	// +ocm:jsonschema-gen:enum=TSACredentials/v1alpha1
 	// +ocm:jsonschema-gen:enum:deprecated=TSACredentials

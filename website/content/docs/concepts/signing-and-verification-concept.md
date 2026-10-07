@@ -469,7 +469,7 @@ serving certificate, add its CA to the HTTP client configuration
 request now honours. For a throwaway self-signed dev TSA, `insecureSkipVerify: true` scoped to that host disables
 connection verification without affecting token trust.
 
-For the complete trust analysis and design rationale, see ADR 0030 (RFC 3161 Timestamping) in the repository's
+For the complete trust analysis and design rationale, see ADR 0032 (RFC 3161 Timestamping) in the repository's
 `docs/adr/` directory.
 
 ## Next Steps
