@@ -112,7 +112,9 @@ func TestTLSRootCAs_Integration(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := require.New(t)
-			resp, err := ocmhttp.NewClient(&httpv1alpha1.Config{TLSConfig: tc.tls}).Get(srv.URL)
+			req, err := nethttp.NewRequestWithContext(t.Context(), nethttp.MethodGet, srv.URL, nil)
+			r.NoError(err)
+			resp, err := ocmhttp.NewClient(&httpv1alpha1.Config{TLSConfig: tc.tls}).Do(req)
 			if tc.wantErr != "" {
 				r.ErrorContains(err, tc.wantErr)
 				return

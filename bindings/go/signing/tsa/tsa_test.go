@@ -209,7 +209,7 @@ func TestGenerateNonce(t *testing.T) {
 	r.NotNil(n1)
 	r.NotNil(n2)
 	r.NotEqual(n1, n2, "two nonces should differ")
-	r.True(n1.BitLen() > 0)
+	r.Positive(n1.BitLen())
 }
 
 func TestPEM_RoundTrip(t *testing.T) {
@@ -920,8 +920,8 @@ func TestRequestTimestamp_ContextCancelled(t *testing.T) {
 // --- Mock TSA server ---
 
 func mustTSAKeyAndCert(t *testing.T) (*rsa.PrivateKey, *x509.Certificate) {
-	r := require.New(t)
 	t.Helper()
+	r := require.New(t)
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	r.NoError(err)
 
@@ -1085,11 +1085,11 @@ func TestSanitizeURL(t *testing.T) {
 func TestRejectInsecureRedirect(t *testing.T) {
 	r := require.New(t)
 
-	httpsReq, err := http.NewRequest(http.MethodPost, "https://tsa.example/ts", nil)
+	httpsReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://tsa.example/ts", nil)
 	r.NoError(err)
 	r.NoError(RejectInsecureRedirect(httpsReq, nil))
 
-	httpReq, err := http.NewRequest(http.MethodPost, "http://tsa.example/ts", nil)
+	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://tsa.example/ts", nil)
 	r.NoError(err)
 	err = RejectInsecureRedirect(httpReq, nil)
 	r.Error(err)
@@ -1106,8 +1106,8 @@ func TestRejectInsecureRedirect(t *testing.T) {
 // issueTimestampingCert issues a certificate signed by parent (self-signed when
 // parent/parentKey are nil) carrying the critical id-kp-timeStamping EKU.
 func issueTimestampingCert(t *testing.T, cn string, isCA bool, parent *x509.Certificate, parentKey *rsa.PrivateKey) (*rsa.PrivateKey, *x509.Certificate) {
-	r := require.New(t)
 	t.Helper()
+	r := require.New(t)
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	r.NoError(err)
 

@@ -22,16 +22,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/digitorus/pkcs7"
+	"github.com/stretchr/testify/require"
+
 	"ocm.software/open-component-model/bindings/go/blob/filesystem"
+	"ocm.software/open-component-model/bindings/go/cli/cmd/internal/test"
 	"ocm.software/open-component-model/bindings/go/ctf"
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	"ocm.software/open-component-model/bindings/go/oci"
 	ocictf "ocm.software/open-component-model/bindings/go/oci/ctf"
-
-	"github.com/digitorus/pkcs7"
-	"github.com/stretchr/testify/require"
-
-	"ocm.software/open-component-model/bindings/go/cli/cmd/internal/test"
 	"ocm.software/open-component-model/bindings/go/signing/tsa"
 )
 
