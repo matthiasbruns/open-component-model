@@ -1,0 +1,13 @@
+diff --git a/bindings/go/descriptor/normalisation/engine/entry/normalise.go b/bindings/go/descriptor/normalisation/engine/entry/normalise.go
+index cd1b79639..6fa796756 100644
+--- a/bindings/go/descriptor/normalisation/engine/entry/normalise.go
++++ b/bindings/go/descriptor/normalisation/engine/entry/normalise.go
+@@ -60,7 +60,7 @@ func Transform(v any) any {
+ func marshal(v any) ([]byte, error) {
+ 	buf := new(bytes.Buffer)
+ 	enc := json.NewEncoder(buf)
+-	enc.SetEscapeHTML(false)
++	enc.SetEscapeHTML(true)
+ 	if err := enc.Encode(v); err != nil {
+ 		return nil, err
+ 	}

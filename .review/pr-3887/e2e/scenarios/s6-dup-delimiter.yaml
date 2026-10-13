@@ -1,0 +1,23 @@
+components:
+- name: acme.org/e2e-s6-dup-delimiter
+  version: 1.0.0
+  provider:
+    name: "acme.org"
+  labels: []
+  resources:
+  - name: res
+    type: blob
+    version: 1.0.0
+    extraIdentity: {aa: "b;cc=dd"}
+    labels: []
+    input:
+      type: file
+      path: __DATA__
+  - name: res
+    type: blob
+    version: 1.0.0
+    extraIdentity: {aa: b, cc: dd}
+    labels: []
+    input:
+      type: file
+      path: __DATA__

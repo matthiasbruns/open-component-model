@@ -1,0 +1,15 @@
+components:
+- name: acme.org/e2e-s4-non-ascii
+  version: 1.0.0
+  provider:
+    name: "Müller GmbH"
+  labels: [{name: owner, value: "José", signing: true}]
+  resources:
+  - name: data
+    type: blob
+    version: 1.0.0
+    extraIdentity: {}
+    labels: []
+    input:
+      type: file
+      path: __DATA__

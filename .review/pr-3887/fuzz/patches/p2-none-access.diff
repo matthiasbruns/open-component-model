@@ -1,0 +1,16 @@
+diff --git a/bindings/go/descriptor/normalisation/json/v1/normalisation.go b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+index 1d0e6fc65..7133da6e0 100644
+--- a/bindings/go/descriptor/normalisation/json/v1/normalisation.go
++++ b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+@@ -123,6 +123,11 @@ func transformComponent(c map[string]any) error {
+ // extraIdentity null when empty, and applies the label rule. The digest is kept
+ // verbatim, including the EXCLUDE-FROM-SIGNATURE sentinel.
+ func transformResource(res map[string]any) {
++	if acc, ok := res["access"].(map[string]any); ok {
++		if t, _ := acc["type"].(string); t == "none" || t == "None" {
++			delete(res, "digest")
++		}
++	}
+ 	delete(res, "access")
+ 	delete(res, "srcRefs")
+ 	nullExtraIdentity(res)

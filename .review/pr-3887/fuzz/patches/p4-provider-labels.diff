@@ -1,0 +1,16 @@
+diff --git a/bindings/go/descriptor/normalisation/json/v1/normalisation.go b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+index 1d0e6fc65..6c2eb1247 100644
+--- a/bindings/go/descriptor/normalisation/json/v1/normalisation.go
++++ b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+@@ -158,6 +158,11 @@ func normaliseProvider(c map[string]any) {
+ 	}
+ 	var obj map[string]any
+ 	if err := json.Unmarshal([]byte(s), &obj); err == nil {
++		if labels, _ := obj["labels"].([]any); len(labels) == 0 {
++			c["provider"] = obj["name"]
++			return
++		}
++		normaliseElementLabels(obj)
+ 		c["provider"] = obj
+ 	}
+ }

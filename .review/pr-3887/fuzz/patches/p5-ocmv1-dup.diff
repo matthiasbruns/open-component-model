@@ -1,0 +1,94 @@
+diff --git a/bindings/go/descriptor/normalisation/json/v1/normalisation.go b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+index 1d0e6fc65..03ececfd1 100644
+--- a/bindings/go/descriptor/normalisation/json/v1/normalisation.go
++++ b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+@@ -3,7 +3,8 @@ package v1
+ import (
+ 	"encoding/json"
+ 	"fmt"
+-	"sort"
++	"maps"
++	"reflect"
+ 	"strconv"
+ 	"strings"
+ 
+@@ -233,61 +234,33 @@ func normaliseElementLabels(m map[string]any) {
+ 	m["labels"] = kept
+ }
+ 
+-// injectDuplicateIdentityVersion mirrors cc-utils' OCM-cli compat behaviour:
+-// for a resource whose identity (name + extraIdentity, ignoring version) is
+-// shared by a later peer, and which has no version in its extraIdentity, the
+-// resource version is injected as extraIdentity["version"]. The last member of
+-// a duplicate group is left unchanged. It must run before extraIdentity is
+-// nulled, as it reads the raw extraIdentity.
++// injectDuplicateIdentityVersion mirrors OCM v1 legacy.DefaultingOfVersionIntoExtraIdentity:
++// every resource whose name and full extraIdentity equal those of any other
++// resource (earlier or later, as already rewritten) gets its own version set as
++// extraIdentity["version"].
+ func injectDuplicateIdentityVersion(resources []any) {
+-	ids := make([]string, len(resources))
+-	for i, r := range resources {
+-		res, _ := r.(map[string]any)
+-		ids[i] = identityWithoutVersion(res)
+-	}
+ 	for i, r := range resources {
+ 		res, ok := r.(map[string]any)
+ 		if !ok {
+ 			continue
+ 		}
+-		ei, _ := res["extraIdentity"].(map[string]any)
+-		if _, hasVersion := ei["version"]; hasVersion {
+-			continue
+-		}
+-		for j := i + 1; j < len(resources); j++ {
+-			if ids[j] == ids[i] {
+-				if ei == nil {
+-					ei = map[string]any{}
+-					res["extraIdentity"] = ei
+-				}
+-				ei["version"] = res["version"]
+-				break
++		for j, p := range resources {
++			peer, ok := p.(map[string]any)
++			if i == j || !ok || res["name"] != peer["name"] {
++				continue
+ 			}
+-		}
+-	}
+-}
+-
+-// identityWithoutVersion builds a stable key from a resource's name and
+-// extraIdentity, excluding the version attribute. An absent extraIdentity is
+-// treated as empty.
+-func identityWithoutVersion(res map[string]any) string {
+-	if res == nil {
+-		return ""
+-	}
+-	name, _ := res["name"].(string)
+-	parts := []string{"name=" + name}
+-	if ei, ok := res["extraIdentity"].(map[string]any); ok {
+-		keys := make([]string, 0, len(ei))
+-		for k := range ei {
+-			if k == "version" {
++			ei, _ := res["extraIdentity"].(map[string]any)
++			pei, _ := peer["extraIdentity"].(map[string]any)
++			if !maps.EqualFunc(ei, pei, func(x, y any) bool { return reflect.DeepEqual(x, y) }) {
+ 				continue
+ 			}
+-			keys = append(keys, k)
+-		}
+-		sort.Strings(keys)
+-		for _, k := range keys {
+-			parts = append(parts, fmt.Sprintf("%s=%v", k, ei[k]))
++			nei := maps.Clone(ei)
++			if nei == nil {
++				nei = map[string]any{}
++			}
++			nei["version"] = res["version"]
++			res["extraIdentity"] = nei
++			break
+ 		}
+ 	}
+-	return strings.Join(parts, ";")
+ }

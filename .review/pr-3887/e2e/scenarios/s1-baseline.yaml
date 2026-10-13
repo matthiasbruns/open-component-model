@@ -1,0 +1,15 @@
+components:
+- name: acme.org/e2e-s1-baseline
+  version: 1.0.0
+  provider:
+    name: "acme.org"
+  labels: [{name: plain, value: x, signing: true}]
+  resources:
+  - name: data
+    type: blob
+    version: 1.0.0
+    extraIdentity: {}
+    labels: []
+    input:
+      type: file
+      path: __DATA__

@@ -1,0 +1,1 @@
+ERROR: convert: could not unmarshal provider string: json: cannot unmarshal string into Go struct field providerStruct.labels.0.signing of type bool

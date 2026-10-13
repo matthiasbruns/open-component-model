@@ -1,0 +1,14 @@
+diff --git a/bindings/go/descriptor/normalisation/json/v1/normalisation.go b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+index 1d0e6fc65..a932c283b 100644
+--- a/bindings/go/descriptor/normalisation/json/v1/normalisation.go
++++ b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+@@ -133,6 +133,9 @@ func transformResource(res map[string]any) {
+ // applies the label rule. The digest is the persisted recursive v1 digest of
+ // the child and is kept verbatim.
+ func transformReference(ref map[string]any) {
++	if d, ok := ref["digest"].(map[string]any); ok && d["hashAlgorithm"] == "" && d["normalisationAlgorithm"] == "" && d["value"] == "" {
++		delete(ref, "digest")
++	}
+ 	nullExtraIdentity(ref)
+ 	normaliseElementLabels(ref)
+ }

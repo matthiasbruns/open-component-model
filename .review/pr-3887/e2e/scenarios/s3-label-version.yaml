@@ -1,0 +1,15 @@
+components:
+- name: acme.org/e2e-s3-label-version
+  version: 1.0.0
+  provider:
+    name: "acme.org"
+  labels: [{name: spec, value: {k: v}, version: v1, signing: true}]
+  resources:
+  - name: data
+    type: blob
+    version: 1.0.0
+    extraIdentity: {}
+    labels: []
+    input:
+      type: file
+      path: __DATA__
