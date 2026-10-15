@@ -1,0 +1,25 @@
+PR 3779 review evidence: Orphan policy without service account, DeletionFailed attribution
+envtest 1.36.0, darwin-arm64, 2026-10-15. Command: review/pr-3779-orphan-sa-gone.sh
+
+| Commit                         | Spec 1: Orphan keeps same-ns objects | Spec 2: message blames service account |
+|--------------------------------|--------------------------------------|----------------------------------------|
+| 924833c1c (PR head)            | FAIL                                 | FAIL                                   |
+| 5bdb5cbb3 (= 5845bda04^)       | FAIL                                 | PASS                                   |
+
+Spec 1 (bug since the deletion policy was added): with deletionPolicy Orphan and the service account gone, the
+NotFound path releases the finalizer without stripping the owner reference. envtest runs no garbage collector; in a
+real cluster the GC deletes the ConfigMap through this owner reference.
+Spec 2 (regression in 5845bda04): the Forbidden prune error comes from the impersonated service account, the message
+blames the controller. Before 5845bda04 it read "service account deployer-sa cannot prune (...)".
+
+--- PR head output (filtered) ---
+  deleted deployer UID=1ea1d592-08a5-4d4c-ae6a-1ddd44a3840d, ConfigMap owners=[{APIVersion:delivery.ocm.software/v1alpha1 Kind:NamespacedDeployer Name:nd UID:1ea1d592-08a5-4d4c-ae6a-1ddd44a3840d Controller:0x5c74dc8d9b4e BlockOwnerDeletion:0x5c74dc8d9b4f}]
+  [38;5;9m[FAILED][0m in [It] - bindings/go/kubernetes/controller/internal/controller/deployer/review_orphan_sa_gone_test.go:45 [38;5;243m@ 10/15/26 13:38:33.152[0m
+[38;5;9m• [FAILED] [3.687 seconds][0m
+  [38;5;9m[FAILED] Orphan policy: the garbage collector deletes the ConfigMap through this owner reference
+  DeletionFailed message: the controller cannot read service account deployer-sa (list /v1, Kind=ConfigMap in blames-the-service-account-when-it-may-not-prune-other: configmaps is forbidden: User "system:serviceaccount:blames-the-service-account-when-it-may-not-prune:deployer-sa" cannot list resource "configmaps" in API group "" in the namespace "blames-the-service-account-when-it-may-not-prune-other"), restore the permissions to delete the objects outside of namespace blames-the-service-account-when-it-may-not-prune: ConfigMap blames-the-service-account-when-it-may-not-prune-other/review-msg-cm
+  [38;5;9m[FAILED][0m in [It] - bindings/go/kubernetes/controller/internal/controller/deployer/review_orphan_sa_gone_test.go:81 [38;5;243m@ 10/15/26 13:38:33.517[0m
+[38;5;9m• [FAILED] [1.459 seconds][0m
+  [38;5;9m[FAILED] the forbidden request came from the impersonated service account, not from the controller reading it
+[38;5;9m[1mRan 2 of 33 Specs in 9.107 seconds[0m
+[38;5;9m[1mFAIL![0m -- [38;5;10m[1m0 Passed[0m | [38;5;9m[1m2 Failed[0m | [38;5;11m[1m0 Pending[0m | [38;5;14m[1m31 Skipped[0m
