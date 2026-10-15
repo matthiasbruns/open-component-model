@@ -1,0 +1,21 @@
+meta:
+  schemaVersion: v2
+component:
+  name: acme.org/case
+  version: 1.0.0
+  provider: ACME
+  creationTime: "2025-06-20T11:25:07+00:00"
+  repositoryContexts: []
+  sources: []
+  componentReferences: []
+  labels: []
+  resources:
+  - name: img
+    version: 1.0.0
+    type: ociImage
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: ociArtifactDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    extraIdentity: {}
+    labels: [{name: big, value: 12345678901234567890, signing: true}]
+    srcRefs: []
