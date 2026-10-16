@@ -108,7 +108,7 @@ flowchart LR
 5. **Excluded resources are left alone**: A `NO-DIGEST` / `EXCLUDE-FROM-SIGNATURE` resource is detected first, exactly as signing does today. It is never hashed, completed or changed when adding, getting or transferring a component version, except by the two conversions listed under Out of Scope. The constructor skips digest processing for it, and each digest processor also returns early, because the controller calls processors directly.
 6. **Strict and lenient modes**: Each entry point keeps today's handling of a complete digest with a foreign label. Processing and upload reject it (strict); packing local blobs keeps it unverified (lenient).
 7. **No entry point becomes stricter**: Changes only widen what is accepted, for example spelling variants and SHA-512 where only SHA-256 was accepted.
-8. **Transfer never changes a digest**: When a transfer copies content as is, the transfer layer writes the source digest into the target descriptor unchanged, whatever the target repository computed while uploading. Today an upload fills in missing and incomplete digests during transfer; that stops. Transfers that convert the content are listed under Out of Scope.
+8. **Transfer never changes a digest**: When a transfer copies content as is, the transfer layer writes the source digest into the target descriptor unchanged, whatever the target repository computed while uploading. Today an upload fills in missing and incomplete digests during transfer; that stops. Transfers that convert the content are listed under Out of Scope. The target descriptor then depends only on the source, so a repeated transfer writes the same descriptor manifest. Immutable registries (for example Nexus with redeploy disabled) reject re-tagging a version, and a repeated transfer succeeds there only because the tag already points at that identical manifest.
 9. **Behaviour specified by tests**: The detailed rules for each case are specified by table tests in the implementation PRs, and the tests from the earlier fix remain the regression suite.
 
 #### Out of Scope
@@ -121,7 +121,7 @@ flowchart LR
 ### Option 1: Shared Package with Binding-Supplied Rules (Chosen)
 
 * **Pros**: One tested decision with the never-rewrite guarantee in one place, one hash-name parser, no binding knowledge in shared code, new rules (such as chunked blobs from ADR 0031) are plain values.
-* **Cons**: Touches about ten packages; strict and lenient modes coexist by design; external plugins still implement digest processing themselves.
+* **Cons**: Touches about ten packages; strict and lenient modes coexist by design; external plugins still implement digest processing themselves; a component version whose missing or incomplete digest an earlier release filled in during transfer gets a different target descriptor when transferred again, which an immutable registry rejects as a changed version.
 
 ### Option 2: v1-Style Digester Registry
 
