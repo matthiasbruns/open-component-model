@@ -77,6 +77,35 @@ func TestTransferKeepsReferenceDigestOfIncompleteChild(t *testing.T) {
 	r.Equal(parent.Component.References[0].Digest, *referenceDigest(t, transferred))
 }
 
+// A repeated transfer writes the same target descriptor manifest, also when the source digest
+// is missing or incomplete. Immutable registries reject re-tagging a version, so a repeated
+// transfer succeeds there only because the tag already points at that manifest.
+func TestTransferIsRepeatable(t *testing.T) {
+	value := godigest.FromBytes(digestTestContent).Encoded()
+	for _, tc := range []struct {
+		name   string
+		digest *descriptor.Digest
+	}{
+		{name: "missing"},
+		{name: "incomplete", digest: &descriptor.Digest{HashAlgorithm: "sha256", Value: value}},
+		{name: "complete", digest: &descriptor.Digest{HashAlgorithm: "SHA-256", NormalisationAlgorithm: "genericBlobDigest/v1", Value: value}},
+		{name: "excluded from the signature", digest: descriptor.NewExcludeFromSignatureDigest()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			source, sourceSpec := newDigestTestCTF(t)
+			addDigestTestComponent(t, source, "ocm.software/child", tc.digest, nil)
+			_, targetSpec := newDigestTestCTF(t)
+
+			transferDigestTestComponentTo(t, source, sourceSpec, targetSpec, "ocm.software/child", 0)
+			first := taggedManifestDigests(t, targetSpec)
+			r.NotEmpty(first)
+			transferDigestTestComponentTo(t, source, sourceSpec, targetSpec, "ocm.software/child", 0)
+			r.Equal(first, taggedManifestDigests(t, targetSpec))
+		})
+	}
+}
+
 func newDigestTestCTF(t *testing.T) (*oci.Repository, *ctfrepospec.Repository) {
 	t.Helper()
 	path := t.TempDir()
@@ -125,8 +154,14 @@ func addDigestTestComponent(t *testing.T, repo *oci.Repository, name string, dig
 
 func transferDigestTestComponent(t *testing.T, source *oci.Repository, sourceSpec *ctfrepospec.Repository, name string, recursive transferv1alpha1.Recursive) *oci.Repository {
 	t.Helper()
-	r := require.New(t)
 	target, targetSpec := newDigestTestCTF(t)
+	transferDigestTestComponentTo(t, source, sourceSpec, targetSpec, name, recursive)
+	return target
+}
+
+func transferDigestTestComponentTo(t *testing.T, source *oci.Repository, sourceSpec, targetSpec *ctfrepospec.Repository, name string, recursive transferv1alpha1.Recursive) {
+	t.Helper()
+	r := require.New(t)
 	tgd, err := transfer.BuildGraphDefinition(t.Context(), &transferv1alpha1.Config{Recursive: recursive}, nil, transfer.Mapping{
 		Components: []transfer.ComponentID{{Component: name, Version: "1.0.0"}},
 		Target:     targetSpec,
@@ -137,7 +172,23 @@ func transferDigestTestComponent(t *testing.T, source *oci.Repository, sourceSpe
 	graph, err := transfer.NewDefaultBuilder(repoProvider, ociresource.NewResourceRepository(nil), nil).BuildAndCheck(tgd)
 	r.NoError(err)
 	r.NoError(graph.Process(t.Context()))
-	return target
+}
+
+// taggedManifestDigests maps each tagged artifact in the CTF at spec to its manifest digest.
+func taggedManifestDigests(t *testing.T, spec *ctfrepospec.Repository) map[string]string {
+	t.Helper()
+	r := require.New(t)
+	fs, err := filesystem.NewFS(spec.FilePath, os.O_RDONLY)
+	r.NoError(err)
+	index, err := ctf.NewFileSystemCTF(fs).GetIndex(t.Context())
+	r.NoError(err)
+	digests := map[string]string{}
+	for _, a := range index.GetArtifacts() {
+		if a.Tag != "" {
+			digests[a.Repository+":"+a.Tag] = a.Digest
+		}
+	}
+	return digests
 }
 
 // referenceDigest computes a reference digest the way the constructor does.
