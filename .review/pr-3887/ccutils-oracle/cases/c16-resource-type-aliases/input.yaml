@@ -1,0 +1,54 @@
+meta:
+  schemaVersion: v2
+component:
+  name: acme.org/case
+  version: 1.0.0
+  provider: ACME
+  creationTime: "2025-06-20T11:25:07+00:00"
+  repositoryContexts: []
+  sources: []
+  componentReferences: []
+  labels: []
+  resources:
+  - name: r0
+    version: 1.0.0
+    type: blob
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: genericBlobDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  - name: r1
+    version: 1.0.0
+    type: helmChart
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: genericBlobDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  - name: r2
+    version: 1.0.0
+    type: ociArtifact
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: genericBlobDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  - name: r3
+    version: 1.0.0
+    type: filesystem
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: genericBlobDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  - name: r4
+    version: 1.0.0
+    type: ociImage/v1
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: genericBlobDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  - name: r5
+    version: 1.0.0
+    type: git/v1
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: genericBlobDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  - name: r6
+    version: 1.0.0
+    type: npmPackage
+    relation: external
+    access: {type: ociRegistry, imageReference: "registry.example/img:1"}
+    digest: {hashAlgorithm: SHA-256, normalisationAlgorithm: genericBlobDigest/v1, value: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}

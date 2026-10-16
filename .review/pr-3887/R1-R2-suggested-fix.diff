@@ -1,0 +1,62 @@
+diff --git a/bindings/go/descriptor/normalisation/json/v1/normalisation.go b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+index e8a4450e5..9658c3b0f 100644
+--- a/bindings/go/descriptor/normalisation/json/v1/normalisation.go
++++ b/bindings/go/descriptor/normalisation/json/v1/normalisation.go
+@@ -7,6 +7,8 @@ import (
+ 	"strconv"
+ 	"strings"
+ 
++	"sigs.k8s.io/yaml"
++
+ 	norms "ocm.software/open-component-model/bindings/go/descriptor/normalisation"
+ 	"ocm.software/open-component-model/bindings/go/descriptor/normalisation/engine/entry"
+ 	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
+@@ -56,7 +58,13 @@ func (algo) Normalise(cd *descruntime.Descriptor) ([]byte, error) {
+ // expands Label.Value (json.RawMessage) into the real nested tree and lets the
+ // transforms operate uniformly on map[string]any.
+ func toMap(desc *v2.Descriptor) (map[string]any, error) {
+-	data, err := json.Marshal(desc)
++	// Go through YAML like the OCI store does (oci/spec/descriptor encode.go and
++	// decode.go), so a descriptor normalises the same before and after storage.
++	y, err := yaml.Marshal(desc)
++	if err != nil {
++		return nil, err
++	}
++	data, err := yaml.YAMLToJSON(y)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -72,7 +80,6 @@ func toMap(desc *v2.Descriptor) (map[string]any, error) {
+ 	// Replace the (order-lost) expanded label values with their original raw
+ 	// bytes so that arrays nested in a label value keep source key order, which
+ 	// cc-utils preserves (it never recurses into arrays).
+-	preserveRawLabelValues(m, desc)
+ 	return m, nil
+ }
+ 
+@@ -205,6 +212,11 @@ func transformElementList(list []any) []any {
+ func transformResource(res map[string]any) error {
+ 	delete(res, "access")
+ 	delete(res, "srcRefs")
++	if t, ok := res["type"].(string); ok {
++		if canon, ok := ccutilsArtefactTypes[t]; ok {
++			res["type"] = canon
++		}
++	}
+ 	nullExtraIdentity(res)
+ 	return normaliseElementLabels(res)
+ }
+@@ -391,3 +403,13 @@ func resourceIdentity(res map[string]any) (string, error) {
+ 	}
+ 	return string(b), nil
+ }
++
++// ccutilsArtefactTypes is cc-utils' ArtefactType alias table (ocm/__init__.py).
++var ccutilsArtefactTypes = map[string]string{
++	"blob":        "blob/v1",
++	"helmChart":   "helmChart/v1",
++	"ociArtifact": "ociArtifact/v1",
++	"filesystem":  "directoryTree",
++	"ociImage/v1": "ociImage",
++	"git/v1":      "git",
++}
