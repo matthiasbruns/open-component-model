@@ -1,0 +1,22 @@
+mode=base head=3d457eb3cc51e7b7020dec35b43bb4d9361d9887 merge-base=eaa272a5d97c189285a92aca2f882ce5a05aa21f
+go test -overlay=/var/folders/z9/1kr064hs1dz3jfw2h_t8d0jh0000gn/T/pr3939-encoding-3mfwrgmj/overlay.json ./wget/repository ./wget/internal/download -run TestReviewPR3939_(ValidHTTPChecksumWithStandardClient|ChecksumBytesMustNotBeTransparentlyDecoded)$ -count=1 -v
+=== RUN   TestReviewPR3939_ValidHTTPChecksumWithStandardClient
+=== RUN   TestReviewPR3939_ValidHTTPChecksumWithStandardClient/default_client
+2026/10/20 12:31:36 WARN resource has no digest, no verification can be performed resource="name=test-resource,version=1.0.0"
+    review_pr3939_encoding_test.go:74: Accept-Encoding="identity" bytes=16 read=<nil> close=<nil>
+=== RUN   TestReviewPR3939_ValidHTTPChecksumWithStandardClient/standard_client
+2026/10/20 12:31:36 WARN resource has no digest, no verification can be performed resource="name=test-resource,version=1.0.0"
+    review_pr3939_encoding_test.go:74: Accept-Encoding="identity" bytes=16 read=<nil> close=<nil>
+=== RUN   TestReviewPR3939_ValidHTTPChecksumWithStandardClient/standard_client_with_explicit_identity
+2026/10/20 12:31:36 WARN resource has no digest, no verification can be performed resource="name=test-resource,version=1.0.0"
+    review_pr3939_encoding_test.go:74: Accept-Encoding="identity" bytes=16 read=<nil> close=<nil>
+--- PASS: TestReviewPR3939_ValidHTTPChecksumWithStandardClient (0.00s)
+    --- PASS: TestReviewPR3939_ValidHTTPChecksumWithStandardClient/default_client (0.00s)
+    --- PASS: TestReviewPR3939_ValidHTTPChecksumWithStandardClient/standard_client (0.00s)
+    --- PASS: TestReviewPR3939_ValidHTTPChecksumWithStandardClient/standard_client_with_explicit_identity (0.00s)
+PASS
+ok      ocm.software/open-component-model/bindings/go/wget/repository   0.468s
+=== RUN   TestReviewPR3939_ChecksumBytesMustNotBeTransparentlyDecoded
+--- PASS: TestReviewPR3939_ChecksumBytesMustNotBeTransparentlyDecoded (0.00s)
+PASS
+ok      ocm.software/open-component-model/bindings/go/wget/internal/download    0.455s
