@@ -1,0 +1,84 @@
+=== RUN   TestProcessResource_ContentEncoding
+=== PAUSE TestProcessResource_ContentEncoding
+=== CONT  TestProcessResource_ContentEncoding
+=== RUN   TestProcessResource_ContentEncoding/decoded_content_is_stored_and_pinned_from_the_content_checksum
+=== PAUSE TestProcessResource_ContentEncoding/decoded_content_is_stored_and_pinned_from_the_content_checksum
+=== RUN   TestProcessResource_ContentEncoding/Content-Digest_verifies_the_transferred_bytes_but_does_not_pin_the_content
+=== PAUSE TestProcessResource_ContentEncoding/Content-Digest_verifies_the_transferred_bytes_but_does_not_pin_the_content
+=== RUN   TestProcessResource_ContentEncoding/tampered_Content-Digest_fails_while_reading
+=== PAUSE TestProcessResource_ContentEncoding/tampered_Content-Digest_fails_while_reading
+=== RUN   TestProcessResource_ContentEncoding/a_stored_content_coding_is_kept
+=== PAUSE TestProcessResource_ContentEncoding/a_stored_content_coding_is_kept
+=== CONT  TestProcessResource_ContentEncoding/decoded_content_is_stored_and_pinned_from_the_content_checksum
+=== CONT  TestProcessResource_ContentEncoding/tampered_Content-Digest_fails_while_reading
+=== CONT  TestProcessResource_ContentEncoding/a_stored_content_coding_is_kept
+=== CONT  TestProcessResource_ContentEncoding/Content-Digest_verifies_the_transferred_bytes_but_does_not_pin_the_content
+--- PASS: TestProcessResource_ContentEncoding (0.00s)
+    --- PASS: TestProcessResource_ContentEncoding/Content-Digest_verifies_the_transferred_bytes_but_does_not_pin_the_content (0.00s)
+    --- PASS: TestProcessResource_ContentEncoding/decoded_content_is_stored_and_pinned_from_the_content_checksum (0.00s)
+    --- PASS: TestProcessResource_ContentEncoding/a_stored_content_coding_is_kept (0.00s)
+    --- PASS: TestProcessResource_ContentEncoding/tampered_Content-Digest_fails_while_reading (0.00s)
+PASS
+ok  	ocm.software/open-component-model/bindings/go/wget/input	0.104s
+=== RUN   TestDownload_CompressTransfer
+=== PAUSE TestDownload_CompressTransfer
+=== RUN   TestDownload_CompressTransferFailures
+=== PAUSE TestDownload_CompressTransferFailures
+=== CONT  TestDownload_CompressTransfer
+=== CONT  TestDownload_CompressTransferFailures
+=== RUN   TestDownload_CompressTransferFailures/an_unknown_negotiated_coding_is_rejected
+=== RUN   TestDownload_CompressTransfer/negotiated_gzip_is_decoded_and_sized_by_the_probe
+=== PAUSE TestDownload_CompressTransferFailures/an_unknown_negotiated_coding_is_rejected
+=== RUN   TestDownload_CompressTransferFailures/corrupt_gzip_fails_the_read
+=== PAUSE TestDownload_CompressTransferFailures/corrupt_gzip_fails_the_read
+=== PAUSE TestDownload_CompressTransfer/negotiated_gzip_is_decoded_and_sized_by_the_probe
+=== RUN   TestDownload_CompressTransferFailures/a_probe_announcing_the_wrong_size_fails_the_read
+=== RUN   TestDownload_CompressTransfer/a_probe_answered_without_range_support_is_sized_by_its_Content-Length
+=== PAUSE TestDownload_CompressTransfer/a_probe_answered_without_range_support_is_sized_by_its_Content-Length
+=== RUN   TestDownload_CompressTransfer/a_failing_probe_still_decodes_negotiated_gzip_with_unknown_size
+=== PAUSE TestDownload_CompressTransfer/a_failing_probe_still_decodes_negotiated_gzip_with_unknown_size
+=== PAUSE TestDownload_CompressTransferFailures/a_probe_announcing_the_wrong_size_fails_the_read
+=== RUN   TestDownload_CompressTransfer/a_coding_kept_for_identity_requests_is_part_of_the_content
+=== PAUSE TestDownload_CompressTransfer/a_coding_kept_for_identity_requests_is_part_of_the_content
+=== RUN   TestDownload_CompressTransferFailures/probed_content_above_the_size_limit_is_rejected_up_front
+=== PAUSE TestDownload_CompressTransferFailures/probed_content_above_the_size_limit_is_rejected_up_front
+=== RUN   TestDownload_CompressTransferFailures/unprobed_content_above_the_size_limit_fails_the_read
+=== PAUSE TestDownload_CompressTransferFailures/unprobed_content_above_the_size_limit_fails_the_read
+=== CONT  TestDownload_CompressTransferFailures/an_unknown_negotiated_coding_is_rejected
+=== RUN   TestDownload_CompressTransfer/an_unknown_coding_kept_for_identity_requests_is_part_of_the_content
+=== CONT  TestDownload_CompressTransferFailures/unprobed_content_above_the_size_limit_fails_the_read
+=== PAUSE TestDownload_CompressTransfer/an_unknown_coding_kept_for_identity_requests_is_part_of_the_content
+=== CONT  TestDownload_CompressTransferFailures/probed_content_above_the_size_limit_is_rejected_up_front
+=== RUN   TestDownload_CompressTransfer/an_uncompressed_response_needs_no_probe
+=== PAUSE TestDownload_CompressTransfer/an_uncompressed_response_needs_no_probe
+=== RUN   TestDownload_CompressTransfer/an_Accept-Encoding_of_the_request_wins
+=== CONT  TestDownload_CompressTransferFailures/a_probe_announcing_the_wrong_size_fails_the_read
+=== CONT  TestDownload_CompressTransferFailures/corrupt_gzip_fails_the_read
+=== PAUSE TestDownload_CompressTransfer/an_Accept-Encoding_of_the_request_wins
+=== RUN   TestDownload_CompressTransfer/without_transfer_compression_the_bytes_are_kept_as_served
+=== PAUSE TestDownload_CompressTransfer/without_transfer_compression_the_bytes_are_kept_as_served
+=== CONT  TestDownload_CompressTransfer/negotiated_gzip_is_decoded_and_sized_by_the_probe
+=== CONT  TestDownload_CompressTransfer/an_unknown_coding_kept_for_identity_requests_is_part_of_the_content
+=== CONT  TestDownload_CompressTransfer/a_failing_probe_still_decodes_negotiated_gzip_with_unknown_size
+=== CONT  TestDownload_CompressTransfer/a_coding_kept_for_identity_requests_is_part_of_the_content
+=== CONT  TestDownload_CompressTransfer/a_probe_answered_without_range_support_is_sized_by_its_Content-Length
+=== CONT  TestDownload_CompressTransfer/an_Accept-Encoding_of_the_request_wins
+=== CONT  TestDownload_CompressTransfer/without_transfer_compression_the_bytes_are_kept_as_served
+=== CONT  TestDownload_CompressTransfer/an_uncompressed_response_needs_no_probe
+--- PASS: TestDownload_CompressTransferFailures (0.00s)
+    --- PASS: TestDownload_CompressTransferFailures/unprobed_content_above_the_size_limit_fails_the_read (0.00s)
+    --- PASS: TestDownload_CompressTransferFailures/a_probe_announcing_the_wrong_size_fails_the_read (0.00s)
+    --- PASS: TestDownload_CompressTransferFailures/probed_content_above_the_size_limit_is_rejected_up_front (0.00s)
+    --- PASS: TestDownload_CompressTransferFailures/corrupt_gzip_fails_the_read (0.00s)
+    --- PASS: TestDownload_CompressTransferFailures/an_unknown_negotiated_coding_is_rejected (0.00s)
+--- PASS: TestDownload_CompressTransfer (0.00s)
+    --- PASS: TestDownload_CompressTransfer/a_probe_answered_without_range_support_is_sized_by_its_Content-Length (0.00s)
+    --- PASS: TestDownload_CompressTransfer/a_failing_probe_still_decodes_negotiated_gzip_with_unknown_size (0.00s)
+    --- PASS: TestDownload_CompressTransfer/without_transfer_compression_the_bytes_are_kept_as_served (0.00s)
+    --- PASS: TestDownload_CompressTransfer/an_uncompressed_response_needs_no_probe (0.00s)
+    --- PASS: TestDownload_CompressTransfer/an_Accept-Encoding_of_the_request_wins (0.00s)
+    --- PASS: TestDownload_CompressTransfer/negotiated_gzip_is_decoded_and_sized_by_the_probe (0.00s)
+    --- PASS: TestDownload_CompressTransfer/a_coding_kept_for_identity_requests_is_part_of_the_content (0.00s)
+    --- PASS: TestDownload_CompressTransfer/an_unknown_coding_kept_for_identity_requests_is_part_of_the_content (0.00s)
+PASS
+ok  	ocm.software/open-component-model/bindings/go/wget/internal/download	0.194s

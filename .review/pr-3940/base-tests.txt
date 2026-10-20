@@ -1,0 +1,10 @@
+=== RUN   TestReviewPR3940_F1_KnownSizeCopyVerifiesContentDigest
+=== RUN   TestReviewPR3940_F1_KnownSizeCopyVerifiesContentDigest/read_to_EOF
+=== RUN   TestReviewPR3940_F1_KnownSizeCopyVerifiesContentDigest/blob.Copy
+--- PASS: TestReviewPR3940_F1_KnownSizeCopyVerifiesContentDigest (0.00s)
+    --- PASS: TestReviewPR3940_F1_KnownSizeCopyVerifiesContentDigest/read_to_EOF (0.00s)
+    --- PASS: TestReviewPR3940_F1_KnownSizeCopyVerifiesContentDigest/blob.Copy (0.00s)
+=== RUN   TestReviewPR3940_F2_FailedProbePreservesStoredArchive
+--- PASS: TestReviewPR3940_F2_FailedProbePreservesStoredArchive (0.00s)
+PASS
+ok  	ocm.software/open-component-model/bindings/go/wget/input	0.142s
