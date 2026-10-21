@@ -1,0 +1,1 @@
+[{"component":[{"componentReferences":[]},{"labels":[[{"name":"example.org/value"},{"signing":true},{"value":[{"a2":1,"a10":2}]}]]},{"name":"acme.org/review"},{"provider":"ACME"},{"resources":[]},{"version":"1.0.0"}]},{"meta":[{"schemaVersion":"v2"}]}]

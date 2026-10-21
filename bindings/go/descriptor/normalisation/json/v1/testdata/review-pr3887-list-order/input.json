@@ -1,0 +1,1 @@
+{"meta": {"schemaVersion": "v2"}, "component": {"name": "acme.org/review", "version": "1.0.0", "provider": "ACME", "repositoryContexts": [], "sources": [], "resources": [], "componentReferences": [], "labels": [{"name": "example.org/value", "value": [{"a2": 1, "a10": 2}], "signing": true}]}, "signatures": []}
