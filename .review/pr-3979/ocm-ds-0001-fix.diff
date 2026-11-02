@@ -1,0 +1,49 @@
+--- a/.github/trivy-checks/ocm-ds-0001.rego
++++ b/.github/trivy-checks/ocm-ds-0001.rego
+@@ -33,14 +33,43 @@
+ 	stage_name(stage) == name
+ }
+ 
+-# The image of a FROM: its first value that is not a --flag.
++# The image of a FROM: its first value (Trivy keeps --platform in Flags).
+ from_image(cmd) := [v | some v in cmd.Value; not startswith(v, "--")][0]
+ 
+-deny contains res if {
++# Every image a stage references: the FROM image, COPY --from=<ref> and
++# RUN --mount=...,from=<ref>. BuildKit pulls each one that is not a stage.
++refs contains [j, from_image(cmd), cmd] if {
+ 	some j, stage in input.Stages
+ 	some cmd in stage.Commands
+ 	cmd.Cmd == "from"
+-	image := from_image(cmd)
++}
++
++refs contains [j, substring(f, count("--from="), -1), cmd] if {
++	some j, stage in input.Stages
++	some cmd in stage.Commands
++	cmd.Cmd == "copy"
++	some f in cmd.Flags
++	startswith(f, "--from=")
++}
++
++refs contains [j, substring(opt, count("from="), -1), cmd] if {
++	some j, stage in input.Stages
++	some cmd in stage.Commands
++	cmd.Cmd == "run"
++	some f in cmd.Flags
++	startswith(f, "--mount=")
++	some opt in split(substring(f, count("--mount="), -1), ",")
++	startswith(opt, "from=")
++}
++
++# COPY --from and RUN --mount from= may also name an earlier stage by index.
++earlier_stage(j, ref) if {
++	regex.match(`^[0-9]+$`, ref)
++	to_number(ref) < j
++}
++
++deny contains res if {
++	some [j, image, cmd] in refs
+ 	lower(image) != "scratch"
+ 	not earlier_stage(j, lower(image))
+ 	not regex.match(`@sha256:[a-f0-9]{64}$`, image)
