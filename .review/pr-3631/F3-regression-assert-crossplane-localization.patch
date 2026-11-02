@@ -1,0 +1,35 @@
+diff --git a/bindings/go/kubernetes/controller/test/e2e/e2e_examples_test.go b/bindings/go/kubernetes/controller/test/e2e/e2e_examples_test.go
+index 726f34375..dd39b5c45 100644
+--- a/bindings/go/kubernetes/controller/test/e2e/e2e_examples_test.go
++++ b/bindings/go/kubernetes/controller/test/e2e/e2e_examples_test.go
+@@ -263,6 +263,30 @@ var _ = Describe("controller", func() {
+ 						"'{.items[0].spec.containers[0].env[?(@.name==\"PODINFO_UI_MESSAGE\")].value}'",
+ 						example.Name(),
+ 					)).To(Succeed())
++
++					if slices.Contains(files, CrossplaneInstance) {
++						crossplanePods := "pod -l app.kubernetes.io/name=" + example.Name() + "-crossplane-podinfo"
++
++						By("validating the Crossplane FluxCD localization")
++						assertLocalizedImage(crossplanePods)
++
++						By("validating the Crossplane FluxCD configuration (ui.message)")
++						Expect(utils.CompareResourceField(ctx,
++							crossplanePods,
++							"'{.items[0].spec.containers[0].env[?(@.name==\"PODINFO_UI_MESSAGE\")].value}'",
++							example.Name(),
++						)).To(Succeed())
++
++						By("validating the Crossplane ArgoCD localization")
++						assertLocalizedImage(crossplanePods + " -n default-argocd")
++
++						By("validating the Crossplane ArgoCD configuration (ui.message)")
++						Expect(utils.CompareResourceField(ctx,
++							crossplanePods+" -n default-argocd",
++							"'{.items[0].spec.containers[0].env[?(@.name==\"PODINFO_UI_MESSAGE\")].value}'",
++							example.Name(),
++						)).To(Succeed())
++					}
+ 				}
+ 			})
+ 		}
