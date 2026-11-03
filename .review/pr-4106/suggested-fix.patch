@@ -1,0 +1,32 @@
+diff --git a/bindings/go/git/repository/upload.go b/bindings/go/git/repository/upload.go
+index f297e1f5e..5b53de05f 100644
+--- a/bindings/go/git/repository/upload.go
++++ b/bindings/go/git/repository/upload.go
+@@ -156,7 +156,7 @@ func (r *ResourceRepository) push(ctx context.Context, repo *git.Repository, tar
+ 	// nothing, so hosts like GitLab and GitHub render it as empty and hide the tag, and a
+ 	// plain clone checks out no working tree. Warn when this push would be the first ref
+ 	// and it is a tag; push a branch ref (refs/heads/*) instead to give the target a default.
+-	if targetRef.IsTag() && !hasBranch(refs) {
++	if targetRef.IsTag() && !hasBranch(refs) || len(refs) > 0 && !advertisesHead(refs) {
+ 		slog.WarnContext(ctx, "pushing a tag into a repository with no branch leaves it without a default branch; Git hosts may show it as empty and a clone checks out no working tree",
+ 			"repository", target.Repository, "ref", target.Ref, "hint", "also push the branch the target's HEAD points at (or set its default branch) so the tag becomes reachable")
+ 	}
+@@ -175,6 +175,18 @@ func (r *ResourceRepository) push(ctx context.Context, repo *git.Repository, tar
+ 	return nil
+ }
+ 
++// advertisesHead reports whether the target advertises HEAD. A server advertises HEAD only
++// when it resolves, so its absence from a non-empty advertisement means HEAD dangles: the
++// target has refs but no default branch, which is the state this warning is about.
++func advertisesHead(refs []*plumbing.Reference) bool {
++	for _, ref := range refs {
++		if ref.Name() == plumbing.HEAD {
++			return true
++		}
++	}
++	return false
++}
++
+ // hasBranch reports whether refs advertises any branch (refs/heads/*).
+ func hasBranch(refs []*plumbing.Reference) bool {
+ 	for _, ref := range refs {
