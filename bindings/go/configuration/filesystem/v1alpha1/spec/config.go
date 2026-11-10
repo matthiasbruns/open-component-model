@@ -1,7 +1,8 @@
 package spec
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"time"
@@ -34,25 +35,25 @@ type Config struct {
 
 	// TempFolder defines places where plugins and other functionalities can put ephemeral files under.
 	// If not defined, os.TempDir is used as a default.
-	TempFolder *string `json:"tempFolder,omitempty"`
+	TempFolder *string `json:"tempFolder,omitzero"`
 
 	// WorkingDirectory defines the working directory for the filesystem operations.
 	// This is typically the directory where the plugin operates, and it can be used
 	// to resolve relative paths for file operations.
 	// If not defined, the current working directory is used as a default for file operations.
-	WorkingDirectory *string `json:"workingDirectory,omitempty"`
+	WorkingDirectory *string `json:"workingDirectory,omitzero"`
 }
 
 type Duration time.Duration
 
-func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Duration(d).String())
+func (d Duration) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return enc.WriteToken(jsontext.String(time.Duration(d).String()))
 }
 
-func (d *Duration) UnmarshalJSON(b []byte) error {
+func (d *Duration) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	var v interface{}
 
-	return json.Unmarshal(b, &v)
+	return json.UnmarshalDecode(dec, &v)
 }
 
 // LookupConfig creates a new filesystem configuration from a central V1 config.

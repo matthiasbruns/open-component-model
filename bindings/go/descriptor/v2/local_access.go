@@ -28,7 +28,7 @@ type LocalBlob struct {
 	MediaType string `json:"mediaType"`
 	// GlobalAccess is an optional field describing a possibility
 	// for a global access. If given, it MUST describe a global access method.
-	GlobalAccess *runtime.Raw `json:"globalAccess,omitempty"`
+	GlobalAccess *runtime.Raw `json:"globalAccess,omitzero"`
 	// ReferenceName is an optional static name the object should be
 	// use in a local repository context. It is use by a repository
 	// to optionally determine a globally referenceable access according

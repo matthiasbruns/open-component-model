@@ -1,7 +1,8 @@
 package v2alpha1
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -42,13 +43,13 @@ type Config struct {
 
 type Duration time.Duration
 
-func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Duration(d).String())
+func (d Duration) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return enc.WriteToken(jsontext.String(time.Duration(d).String()))
 }
 
-func (d *Duration) UnmarshalJSON(b []byte) error {
-	var v interface{}
-	if err := json.Unmarshal(b, &v); err != nil {
+func (d *Duration) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	var v any
+	if err := json.UnmarshalDecode(dec, &v); err != nil {
 		return err
 	}
 	switch value := v.(type) {
