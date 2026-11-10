@@ -2,7 +2,7 @@ package integration_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"testing"
@@ -66,7 +66,7 @@ func pushTestOCIImage(t *testing.T, registryAddr, user, password, repoPath, tag 
 		Layers:    []ocispecv1.Descriptor{layerDesc},
 	}
 
-	manifestContent, err := json.Marshal(manifest)
+	manifestContent, err := json.Marshal(manifest, runtime.JSONOptions)
 	require.NoError(t, err)
 
 	manifestDesc := ocispecv1.Descriptor{
@@ -429,7 +429,7 @@ func pushTestDockerManifest(t *testing.T, registryAddr, user, password, repoPath
 		Config:        configDesc,
 		Layers:        []ocispecv1.Descriptor{layerDesc},
 	}
-	manifestContent, err := json.Marshal(manifest)
+	manifestContent, err := json.Marshal(manifest, runtime.JSONOptions)
 	require.NoError(t, err)
 
 	manifestDesc := ocispecv1.Descriptor{
@@ -576,7 +576,7 @@ func Test_Integration_TransferDockerManifestLocalBlob_CTFToOCI(t *testing.T) {
 		"Docker manifest resource should be stored as OCIImage access after a transfer with an OCI uploader")
 
 	var typedOCIAccess ociaccessv1.OCIImage
-	rawAccess, err := json.Marshal(gotAccess)
+	rawAccess, err := json.Marshal(gotAccess, runtime.JSONOptions)
 	r.NoError(err)
 	r.NoError(json.Unmarshal(rawAccess, &typedOCIAccess))
 	r.Contains(typedOCIAccess.ImageReference, targetAddr,
