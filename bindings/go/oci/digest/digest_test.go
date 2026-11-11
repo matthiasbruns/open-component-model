@@ -54,6 +54,6 @@ func TestRules(t *testing.T) {
 	}
 
 	artifact := &descriptor.Digest{HashAlgorithm: "SHA-256", NormalisationAlgorithm: ocidigest.ArtifactDigestV1, Value: computed.Value}
-	_, err = ocmdigest.Check(artifact, computed, ocidigest.BlobRule)
+	_, err = ocmdigest.Check(artifact, computed, ocmdigest.BlobRule)
 	r.ErrorContains(err, "normalisation algorithm mismatch")
 }

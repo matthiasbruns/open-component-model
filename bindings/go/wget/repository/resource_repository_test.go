@@ -433,7 +433,7 @@ func TestProcessResourceDigest(t *testing.T) {
 
 		_, err := repo.ProcessResourceDigest(t.Context(), resource, nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "digest mismatch")
+		assert.Contains(t, err.Error(), "digest value mismatch")
 	})
 
 	t.Run("fails on unsupported hash algorithm", func(t *testing.T) {
@@ -455,7 +455,7 @@ func TestProcessResourceDigest(t *testing.T) {
 
 		_, err := repo.ProcessResourceDigest(t.Context(), resource, nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported hash algorithm")
+		assert.Contains(t, err.Error(), "hash algorithm mismatch")
 	})
 
 	t.Run("fails on unsupported normalisation algorithm", func(t *testing.T) {
@@ -477,7 +477,7 @@ func TestProcessResourceDigest(t *testing.T) {
 
 		_, err := repo.ProcessResourceDigest(t.Context(), resource, nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported normalisation algorithm")
+		assert.Contains(t, err.Error(), "normalisation algorithm mismatch")
 	})
 }
 
@@ -746,7 +746,7 @@ func TestProcessResourceDigest_AccessFastPath(t *testing.T) {
 		resource.Digest.Value = strings.Repeat("0", 64)
 		_, err = repo.ProcessResourceDigest(t.Context(), resource, nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "does not match source-advertised")
+		assert.Contains(t, err.Error(), "digest value mismatch")
 	})
 }
 

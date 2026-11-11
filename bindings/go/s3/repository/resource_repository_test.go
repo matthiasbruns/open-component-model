@@ -211,13 +211,13 @@ func Test_DownloadResource_DigestVerification(t *testing.T) {
 	}
 
 	matching := &descriptor.Digest{
-		HashAlgorithm:          hashAlgorithmSHA256,
-		NormalisationAlgorithm: genericBlobDigestV1,
+		HashAlgorithm:          "SHA-256",
+		NormalisationAlgorithm: descriptor.GenericBlobDigestV1,
 		Value:                  godigest.FromBytes(content).Encoded(),
 	}
 	sha512 := &descriptor.Digest{
 		HashAlgorithm:          "SHA-512",
-		NormalisationAlgorithm: genericBlobDigestV1,
+		NormalisationAlgorithm: descriptor.GenericBlobDigestV1,
 		Value:                  godigest.SHA512.FromBytes(content).Encoded(),
 	}
 
@@ -265,7 +265,7 @@ func Test_DownloadResource_DigestVerification(t *testing.T) {
 		r := require.New(t)
 		srv, _, err := downloadWith(t, content, &descriptor.Digest{
 			HashAlgorithm:          "MD5",
-			NormalisationAlgorithm: genericBlobDigestV1,
+			NormalisationAlgorithm: descriptor.GenericBlobDigestV1,
 			Value:                  godigest.FromBytes(content).Encoded(),
 		})
 		r.ErrorContains(err, "unsupported hash algorithm")
@@ -283,8 +283,8 @@ func Test_ProcessResourceDigest(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res.Digest)
 	require.Equal(t, godigest.FromBytes(content).Encoded(), res.Digest.Value)
-	require.Equal(t, hashAlgorithmSHA256, res.Digest.HashAlgorithm)
-	require.Equal(t, genericBlobDigestV1, res.Digest.NormalisationAlgorithm)
+	require.Equal(t, "SHA-256", res.Digest.HashAlgorithm)
+	require.Equal(t, descriptor.GenericBlobDigestV1, res.Digest.NormalisationAlgorithm)
 }
 
 // A hand-written digest cannot know the normalisation algorithm and need not restate the
@@ -304,7 +304,7 @@ func Test_ProcessResourceDigest_VerifiesLeniently(t *testing.T) {
 		},
 		{
 			name:   "lowercase hash algorithm spelling",
-			digest: &descriptor.Digest{HashAlgorithm: "sha-256", NormalisationAlgorithm: genericBlobDigestV1, Value: value},
+			digest: &descriptor.Digest{HashAlgorithm: "sha-256", NormalisationAlgorithm: descriptor.GenericBlobDigestV1, Value: value},
 		},
 		{
 			name:   "uppercase digest value",
@@ -344,8 +344,8 @@ func Test_ProcessResourceDigest_VerifiesLeniently(t *testing.T) {
 			require.NoError(t, err)
 
 			// Accepted spellings are canonicalized so descriptors do not vary by author.
-			require.Equal(t, hashAlgorithmSHA256, res.Digest.HashAlgorithm)
-			require.Equal(t, genericBlobDigestV1, res.Digest.NormalisationAlgorithm)
+			require.Equal(t, "SHA-256", res.Digest.HashAlgorithm)
+			require.Equal(t, descriptor.GenericBlobDigestV1, res.Digest.NormalisationAlgorithm)
 			require.Equal(t, value, res.Digest.Value)
 		})
 	}

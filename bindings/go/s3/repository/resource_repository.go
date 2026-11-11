@@ -2,12 +2,12 @@ package repository
 
 import (
 	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	godigest "github.com/opencontainers/go-digest"
 
@@ -23,11 +23,6 @@ import (
 	v2 "ocm.software/open-component-model/bindings/go/s3/spec/access/v2"
 	s3creds "ocm.software/open-component-model/bindings/go/s3/spec/credentials"
 	identityv1 "ocm.software/open-component-model/bindings/go/s3/spec/identity/v1"
-)
-
-const (
-	hashAlgorithmSHA256 = "SHA-256"
-	genericBlobDigestV1 = "genericBlobDigest/v1"
 )
 
 var _ repository.ResourceRepository = (*ResourceRepository)(nil)
@@ -176,30 +171,11 @@ func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, resource
 	resolvedValue := result.Digest.Encoded()
 
 	resource = resource.DeepCopy()
-	if resource.Digest == nil {
-		resource.Digest = &descriptor.Digest{
-			HashAlgorithm:          hashAlgorithmSHA256,
-			NormalisationAlgorithm: genericBlobDigestV1,
-			Value:                  resolvedValue,
-		}
-	} else {
-		// A hand-written digest cannot know the normalisation algorithm and need not
-		// restate the hash, so only a field pinned to a different algorithm is a conflict.
-		// Spelling is not one either, hence the case-insensitive comparisons.
-		if resource.Digest.HashAlgorithm != "" && !strings.EqualFold(resource.Digest.HashAlgorithm, hashAlgorithmSHA256) {
-			return nil, fmt.Errorf("hash algorithm mismatch: expected %s, got %s", hashAlgorithmSHA256, resource.Digest.HashAlgorithm)
-		}
-		if resource.Digest.NormalisationAlgorithm != "" && !strings.EqualFold(resource.Digest.NormalisationAlgorithm, genericBlobDigestV1) {
-			return nil, fmt.Errorf("normalisation algorithm mismatch: expected %s, got %s", genericBlobDigestV1, resource.Digest.NormalisationAlgorithm)
-		}
-		if !strings.EqualFold(resource.Digest.Value, resolvedValue) {
-			return nil, fmt.Errorf("digest value mismatch: expected %s, got %s", resource.Digest.Value, resolvedValue)
-		}
-
-		// Canonicalize the accepted spellings so descriptors do not vary by author.
-		resource.Digest.HashAlgorithm = hashAlgorithmSHA256
-		resource.Digest.NormalisationAlgorithm = genericBlobDigestV1
-		resource.Digest.Value = resolvedValue
+	// The digest is still author input here, so the shared rules complete what a constructor
+	// entry left out and report only a genuine conflict.
+	if resource.Digest, err = ocmdigest.Complete(resource.Digest,
+		ocmdigest.Computed{Hash: crypto.SHA256, Value: resolvedValue}, ocmdigest.BlobRule); err != nil {
+		return nil, err
 	}
 
 	switch pinned, served := pinningVersion(spec.Version), pinningVersion(result.VersionID); {

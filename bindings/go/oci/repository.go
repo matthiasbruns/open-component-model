@@ -361,7 +361,7 @@ func (repo *Repository) processOCIImageLayerDigest(ctx context.Context, res *des
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert digest of resource %q: %w", res.ToIdentity(), err)
 	}
-	result, err := ocmdigest.Check(res.Digest, computed, ocidigest.BlobRule)
+	result, err := ocmdigest.Check(res.Digest, computed, ocmdigest.BlobRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify digest of resource %q: %w", res.ToIdentity(), err)
 	}

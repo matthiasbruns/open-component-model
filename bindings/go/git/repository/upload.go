@@ -19,6 +19,7 @@ import (
 
 	"ocm.software/open-component-model/bindings/go/blob"
 	descriptor "ocm.software/open-component-model/bindings/go/descriptor/runtime"
+	ocmdigest "ocm.software/open-component-model/bindings/go/digest"
 	"ocm.software/open-component-model/bindings/go/git/internal/download"
 	"ocm.software/open-component-model/bindings/go/git/internal/endpoint"
 	accessv1 "ocm.software/open-component-model/bindings/go/git/spec/access/v1"
@@ -90,7 +91,14 @@ func (r *ResourceRepository) upload(ctx context.Context, resource *descriptor.Re
 	if _, err := io.Copy(io.Discard, tee); err != nil {
 		return nil, fmt.Errorf("cannot read git archive: %w", err)
 	}
-	if err := verifyDigest(resource.Digest, digester.Digest()); err != nil {
+	// An upload moves an existing descriptor, so its digest is a recorded one: the shared rules
+	// verify it and reject what they cannot interpret. The result is discarded on purpose, so
+	// that an absent digest stays absent and a parent's reference digest keeps covering it.
+	computed, err := archiveDigest(digester.Digest())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := ocmdigest.Check(resource.Digest, computed, ocmdigest.BlobRule); err != nil {
 		return nil, err
 	}
 

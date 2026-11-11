@@ -183,7 +183,7 @@ func TestUploadResourceRejectsArchive(t *testing.T) {
 			name:    "digest mismatch",
 			digest:  strings.Repeat("0", 64),
 			content: content,
-			wantErr: "digest mismatch",
+			wantErr: "digest value mismatch",
 		},
 		{
 			name: "files-only snapshot",

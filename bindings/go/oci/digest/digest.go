@@ -28,8 +28,6 @@ var (
 		Normalisation: ArtifactDigestV1,
 		Accepted:      []string{LegacyArtifactDigestV1, descriptor.GenericBlobDigestV1},
 	}
-	// BlobRule applies when the digest is the hash of plain bytes.
-	BlobRule = ocmdigest.Rule{Normalisation: descriptor.GenericBlobDigestV1}
 )
 
 // FromOCI converts an OCI digest to a computed digest.

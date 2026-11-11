@@ -7,9 +7,9 @@ package digest
 
 import (
 	"context"
+	"crypto"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	godigest "github.com/opencontainers/go-digest"
 
@@ -23,11 +23,6 @@ import (
 	credsv1 "ocm.software/open-component-model/bindings/go/github/spec/credentials/v1"
 	"ocm.software/open-component-model/bindings/go/plugin/manager/registries/digestprocessor"
 	"ocm.software/open-component-model/bindings/go/runtime"
-)
-
-const (
-	hashAlgorithmSHA256              = "SHA-256"
-	normalisationGenericBlobDigestV1 = "genericBlobDigest/v1"
 )
 
 var _ digestprocessor.BuiltinDigestProcessorPlugin = (*DigestProcessor)(nil)
@@ -106,24 +101,10 @@ func (p *DigestProcessor) ProcessResourceDigest(
 		res.Access = pinned
 	}
 
-	// A hand-written resource.Digest in a component constructor cannot know the
-	// normalisation algorithm — the blob is never normalised — and need not
-	// restate the hash. An unset field means "fill it in with what we compute";
-	// only a field pinned to a *different* algorithm is a genuine conflict.
-	// Spelling is not a conflict either: comparisons ignore case, so "sha-256"
-	// or an uppercase hex value verifies instead of failing while an absent
-	// field would have been accepted.
-	//
-	// Checked before the download: neither comparison needs the archive, and a
-	// digest pinned to another algorithm can never match what is computed here,
-	// so fetching it would be a guaranteed waste.
-	if res.Digest != nil {
-		if res.Digest.HashAlgorithm != "" && !strings.EqualFold(res.Digest.HashAlgorithm, hashAlgorithmSHA256) {
-			return nil, fmt.Errorf("hash algorithm mismatch: expected %s, got %s", hashAlgorithmSHA256, res.Digest.HashAlgorithm)
-		}
-		if res.Digest.NormalisationAlgorithm != "" && !strings.EqualFold(res.Digest.NormalisationAlgorithm, normalisationGenericBlobDigestV1) {
-			return nil, fmt.Errorf("normalisation algorithm mismatch: expected %s, got %s", normalisationGenericBlobDigestV1, res.Digest.NormalisationAlgorithm)
-		}
+	// An algorithm the author pinned can never match what is computed here, so the archive is
+	// not fetched to find that out. The value is settled after the download.
+	if err := ocmdigest.CheckPinned(res.Digest, crypto.SHA256, ocmdigest.BlobRule); err != nil {
+		return nil, err
 	}
 
 	// The full archive is fetched only to be hashed and thrown away. That cost
@@ -146,25 +127,12 @@ func (p *DigestProcessor) ProcessResourceDigest(
 	if err != nil {
 		return nil, fmt.Errorf("downloaded github archive blob does not carry a valid digest: %w", err)
 	}
-	resolvedValue := resolvedDigest.Encoded()
-
-	if res.Digest == nil {
-		res.Digest = &descriptor.Digest{
-			HashAlgorithm:          hashAlgorithmSHA256,
-			NormalisationAlgorithm: normalisationGenericBlobDigestV1,
-			Value:                  resolvedValue,
-		}
-		return res, nil
+	// The digest is still author input here, so the shared rules complete what a constructor
+	// entry left out and report only a genuine conflict.
+	if res.Digest, err = ocmdigest.Complete(res.Digest,
+		ocmdigest.Computed{Hash: crypto.SHA256, Value: resolvedDigest.Encoded()}, ocmdigest.BlobRule); err != nil {
+		return nil, err
 	}
-
-	if !strings.EqualFold(res.Digest.Value, resolvedValue) {
-		return nil, fmt.Errorf("digest value mismatch: expected %s, got %s", res.Digest.Value, resolvedValue)
-	}
-
-	// Canonicalize the accepted spellings so descriptors do not vary by author.
-	res.Digest.HashAlgorithm = hashAlgorithmSHA256
-	res.Digest.NormalisationAlgorithm = normalisationGenericBlobDigestV1
-	res.Digest.Value = resolvedValue
 
 	return res, nil
 }

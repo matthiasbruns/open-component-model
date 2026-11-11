@@ -35,6 +35,10 @@ type Rule struct {
 	Accepted []string
 }
 
+// BlobRule applies when the digest is the hash of the raw bytes of a blob. It is the rule of
+// every binding that hashes what it downloaded rather than resolving a structured artifact.
+var BlobRule = Rule{Normalisation: descriptor.GenericBlobDigestV1}
+
 // accepts reports whether a recorded normalisation describes what the binding computed. An
 // unlabelled digest describes the bytes of a blob, so only the blob rule accepts it.
 func (r Rule) accepts(normalisation string) bool {

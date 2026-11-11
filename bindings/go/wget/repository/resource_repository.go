@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"ocm.software/open-component-model/bindings/go/blob"
 	checksumhttpv1alpha1 "ocm.software/open-component-model/bindings/go/configuration/checksum/http/v1alpha1/spec"
@@ -25,13 +24,6 @@ import (
 	wgetcreds "ocm.software/open-component-model/bindings/go/wget/spec/credentials"
 	wgetidentity "ocm.software/open-component-model/bindings/go/wget/spec/identity"
 	identityv1 "ocm.software/open-component-model/bindings/go/wget/spec/identity/v1"
-)
-
-const (
-	hashAlgorithmSHA256 = "SHA-256"
-	// genericBlobDigestV1 is the normalisation algorithm for a plain
-	// downloaded blob.
-	genericBlobDigestV1 = "genericBlobDigest/v1"
 )
 
 var _ repository.ResourceRepository = (*ResourceRepository)(nil)
@@ -240,27 +232,13 @@ func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, resource
 	sha := hex.EncodeToString(h.Sum(nil))
 
 	resource = resource.DeepCopy()
-	if resource.Digest == nil {
-		resource.Digest = &descriptor.Digest{
-			HashAlgorithm:          hashAlgorithmSHA256,
-			NormalisationAlgorithm: genericBlobDigestV1,
-			Value:                  sha,
-		}
-		slog.DebugContext(ctx, "wget: digest recorded from downloaded bytes", "url", wget.URL, "value", sha)
-		return resource, nil
+	// The digest is still author input here, so the shared rules complete what a constructor
+	// entry left out and report only a genuine conflict.
+	if resource.Digest, err = ocmdigest.Complete(resource.Digest,
+		ocmdigest.Computed{Hash: checksum.StorageAlgorithm.Hash, Value: sha}, ocmdigest.BlobRule); err != nil {
+		return nil, err
 	}
-
-	if resource.Digest.HashAlgorithm != hashAlgorithmSHA256 {
-		return nil, fmt.Errorf("unsupported hash algorithm: expected %s, got %s", hashAlgorithmSHA256, resource.Digest.HashAlgorithm)
-	}
-	if resource.Digest.NormalisationAlgorithm != genericBlobDigestV1 {
-		return nil, fmt.Errorf("unsupported normalisation algorithm: expected %s, got %s", genericBlobDigestV1, resource.Digest.NormalisationAlgorithm)
-	}
-	want := strings.TrimPrefix(resource.Digest.Value, "sha256:")
-	if !strings.EqualFold(want, sha) {
-		return nil, fmt.Errorf("digest mismatch: expected %s, got %s", resource.Digest.Value, sha)
-	}
-	slog.DebugContext(ctx, "wget: pinned digest matches downloaded bytes", "url", wget.URL, "value", sha)
+	slog.DebugContext(ctx, "wget: digest recorded from downloaded bytes", "url", wget.URL, "value", sha)
 
 	return resource, nil
 }
@@ -317,26 +295,12 @@ func (r *ResourceRepository) processDigestViaPeek(
 		"url", url, "algorithm", exp.Algorithm.OCMName, "value", exp.Value)
 
 	out := resource.DeepCopy()
-	if out.Digest != nil {
-		if !strings.EqualFold(out.Digest.HashAlgorithm, exp.Algorithm.OCMName) {
-			return nil, false, fmt.Errorf("pinned digest algorithm %q does not match the source-advertised algorithm %q", out.Digest.HashAlgorithm, exp.Algorithm.OCMName)
-		}
-		if out.Digest.NormalisationAlgorithm != "" && out.Digest.NormalisationAlgorithm != genericBlobDigestV1 {
-			return nil, false, fmt.Errorf("unsupported normalisation algorithm: expected %s, got %s", genericBlobDigestV1, out.Digest.NormalisationAlgorithm)
-		}
-		// Pinned value may be bare hex or go-digest form ("sha256:<hex>").
-		pinnedHex := strings.ToLower(out.Digest.Value)
-		if idx := strings.IndexByte(pinnedHex, ':'); idx >= 0 {
-			pinnedHex = pinnedHex[idx+1:]
-		}
-		if !strings.EqualFold(pinnedHex, exp.Value) {
-			return nil, false, fmt.Errorf("pinned digest %s does not match source-advertised %s digest %s", out.Digest.Value, exp.Algorithm.OCMName, exp.Value)
-		}
-	}
-	out.Digest = &descriptor.Digest{
-		HashAlgorithm:          exp.Algorithm.OCMName,
-		NormalisationAlgorithm: genericBlobDigestV1,
-		Value:                  exp.Value,
+	// The digest is still author input here, so the shared rules complete what a constructor
+	// entry left out, accept a value written as bare hex or as "<algorithm>:<hex>", and report
+	// only a genuine conflict with what the source advertised.
+	if out.Digest, err = ocmdigest.Complete(out.Digest,
+		ocmdigest.Computed{Hash: exp.Algorithm.Hash, Value: exp.Value}, ocmdigest.BlobRule); err != nil {
+		return nil, false, err
 	}
 	slog.DebugContext(ctx, "wget: digest pinned from source-advertised checksum", "url", url, "algorithm", exp.Algorithm.OCMName, "value", exp.Value)
 	return out, true, nil

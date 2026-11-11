@@ -185,9 +185,9 @@ func TestResourceDigestVerification(t *testing.T) {
 		name, value, hashAlgorithm, normalisation, wantErr, wantDownloadErr string
 	}{
 		{name: "compressed digest", value: checksum.Encoded()},
-		{name: "wrong digest", value: strings.Repeat("0", 64), wantErr: "digest mismatch", wantDownloadErr: "digest mismatch"},
-		{name: "unsupported hash", value: checksum.Encoded(), hashAlgorithm: "SHA-512", wantErr: "unsupported git hash algorithm", wantDownloadErr: "invalid digest"},
-		{name: "unsupported normalisation", value: checksum.Encoded(), normalisation: "other", wantErr: "unsupported git normalisation", wantDownloadErr: "unsupported normalisation algorithm"},
+		{name: "wrong digest", value: strings.Repeat("0", 64), wantErr: "digest value mismatch", wantDownloadErr: "digest mismatch"},
+		{name: "unsupported hash", value: checksum.Encoded(), hashAlgorithm: "SHA-512", wantErr: "hash algorithm mismatch", wantDownloadErr: "invalid digest"},
+		{name: "unsupported normalisation", value: checksum.Encoded(), normalisation: "other", wantErr: "normalisation algorithm mismatch", wantDownloadErr: "unsupported normalisation algorithm"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := require.New(t)

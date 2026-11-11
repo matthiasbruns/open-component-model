@@ -359,7 +359,7 @@ func verifyLayoutRootDigest(d *descriptor.Digest, root digest.Digest) error {
 
 // checkPackedDigest checks a resource digest against the packed root.
 func checkPackedDigest(recorded *descriptor.Digest, root digest.Digest, normalisation string) (ocmdigest.Result, error) {
-	rule := ocidigest.BlobRule
+	rule := ocmdigest.BlobRule
 	if normalisation == ocidigest.ArtifactDigestV1 {
 		rule = ocidigest.ArtifactRule
 	}

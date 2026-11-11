@@ -2,11 +2,11 @@ package repository
 
 import (
 	"context"
+	"crypto"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/crypto/ssh"
@@ -23,11 +23,6 @@ import (
 	"ocm.software/open-component-model/bindings/go/repository"
 	"ocm.software/open-component-model/bindings/go/repository/integrity"
 	"ocm.software/open-component-model/bindings/go/runtime"
-)
-
-const (
-	hashAlgorithmSHA256 = "SHA-256"
-	genericBlobDigestV1 = "genericBlobDigest/v1"
 )
 
 type ResourceRepository struct {
@@ -161,7 +156,14 @@ func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, res *des
 	if err != nil {
 		return nil, err
 	}
-	if err := verifyDigest(res.Digest, downloaded.Digest); err != nil {
+	computed, err := archiveDigest(downloaded.Digest)
+	if err != nil {
+		return nil, err
+	}
+	// The digest is still author input here, so the shared rules complete what a constructor
+	// entry left out and report only a genuine conflict.
+	recorded, err := ocmdigest.Complete(res.Digest, computed, ocmdigest.BlobRule)
+	if err != nil {
 		return nil, err
 	}
 
@@ -176,12 +178,7 @@ func (r *ResourceRepository) ProcessResourceDigest(ctx context.Context, res *des
 
 	result := res.DeepCopy()
 	result.Access = pinned
-	// verifyDigest already rejected a set digest that does not match this archive.
-	result.Digest = &descriptor.Digest{
-		HashAlgorithm:          hashAlgorithmSHA256,
-		NormalisationAlgorithm: genericBlobDigestV1,
-		Value:                  downloaded.Digest.Encoded(),
-	}
+	result.Digest = recorded
 
 	return result, nil
 }
@@ -212,26 +209,15 @@ func accessFrom(res *descriptor.Resource) (*accessv1.Git, error) {
 	return result.Normalize()
 }
 
-func verifyDigest(expected *descriptor.Digest, actual digest.Digest) error {
+// archiveDigest is the digest of a git archive as the shared rules take it. A git archive is
+// hashed as plain bytes, so [ocmdigest.BlobRule] is its rule. Archives are hashed with
+// [digest.Canonical], which the conversion relies on.
+func archiveDigest(actual digest.Digest) (ocmdigest.Computed, error) {
 	if err := actual.Validate(); err != nil {
-		return fmt.Errorf("git archive has an invalid digest %q: %w", actual, err)
+		return ocmdigest.Computed{}, fmt.Errorf("git archive has an invalid digest %q: %w", actual, err)
 	}
-
-	if expected == nil {
-		return nil
+	if actual.Algorithm() != digest.SHA256 {
+		return ocmdigest.Computed{}, fmt.Errorf("git archive was hashed with %s, not %s", actual.Algorithm(), digest.SHA256)
 	}
-
-	if expected.HashAlgorithm != "" && !strings.EqualFold(expected.HashAlgorithm, hashAlgorithmSHA256) {
-		return fmt.Errorf("unsupported git hash algorithm %q", expected.HashAlgorithm)
-	}
-
-	if expected.NormalisationAlgorithm != "" && !strings.EqualFold(expected.NormalisationAlgorithm, genericBlobDigestV1) {
-		return fmt.Errorf("unsupported git normalisation algorithm %q", expected.NormalisationAlgorithm)
-	}
-
-	if !strings.EqualFold(expected.Value, actual.Encoded()) {
-		return fmt.Errorf("git archive digest mismatch: expected %s, got %s", expected.Value, actual.Encoded())
-	}
-
-	return nil
+	return ocmdigest.Computed{Hash: crypto.SHA256, Value: actual.Encoded()}, nil
 }

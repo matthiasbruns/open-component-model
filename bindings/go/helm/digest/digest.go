@@ -102,7 +102,7 @@ func (p *DigestProcessor) ProcessResourceDigest(
 	}
 
 	var resolvedDigest godigest.Digest
-	rule := ocidigest.BlobRule
+	rule := ocmdigest.BlobRule
 
 	var err error
 	if strings.HasPrefix(helm.HelmRepository, "oci://") {
@@ -131,28 +131,26 @@ func (p *DigestProcessor) ProcessResourceDigest(
 		return nil, err
 	}
 
-	checked, err := checkDigest(resource.Digest, resolvedDigest, rule)
+	completed, err := completeDigest(resource.Digest, resolvedDigest, rule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check digest of resource: %w", err)
 	}
 	resource = resource.DeepCopy()
-	resource.Digest = checked
+	resource.Digest = completed
 
 	return resource, nil
 }
 
-// checkDigest checks the recorded digest of a chart against the resolved one and returns the
-// digest to record.
-func checkDigest(recorded *runtime.Digest, resolved godigest.Digest, rule ocmdigest.Rule) (*runtime.Digest, error) {
+// completeDigest returns the digest to record for a chart whose digest the resolved one may
+// only partly agree with. The digest is still author input here, so the shared rules complete
+// what a constructor entry left out and report only a genuine conflict; every later step sees
+// a recorded digest and goes through [ocmdigest.Check].
+func completeDigest(authored *runtime.Digest, resolved godigest.Digest, rule ocmdigest.Rule) (*runtime.Digest, error) {
 	computed, err := ocidigest.FromOCI(resolved)
 	if err != nil {
 		return nil, err
 	}
-	result, err := ocmdigest.Check(recorded, computed, rule)
-	if err != nil {
-		return nil, err
-	}
-	return result.Digest, nil
+	return ocmdigest.Complete(authored, computed, rule)
 }
 
 func (p *DigestProcessor) resolveHTTPDigest(ctx context.Context, helm helmv1.Helm, credentials *helmcredsv1.HelmHTTPCredentials) (godigest.Digest, error) {
