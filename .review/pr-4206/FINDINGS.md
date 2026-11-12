@@ -11,6 +11,22 @@ Repros for findings on [#4206](https://github.com/open-component-model/open-comp
 Every test below asserts the behaviour as it should be, so each one **fails on the PR head and
 passes on the merge base**. Run them from `bindings/go`.
 
+## Status
+
+| | finding | state at `ceb9bebf3c` |
+| --- | --- | --- |
+| F1 | nested `.ocmconfig` specs drop case-variant members | fixed |
+| F2 | provider bytes change on a read/write cycle | fixed for `<`, `>`, `&`; see F2b |
+| F2b | provider bytes still differ from OCM v1 for U+2028 / U+2029 | **open** |
+| F3 | artifact index becomes unopenable | fixed |
+| F5 | failed marshal corrupts the plugin response | fixed |
+| F6 | wget access and input disagree on URL casing | fixed |
+| F4 | no guard that marshal calls pass `JSONOptions` | adopted |
+
+The five Go tests in this branch were written against `626e43229b` and fail there. They all
+**pass** on `ceb9bebf3c`, so they now serve as regression tests for the fixes. Each fix was
+additionally mutation-tested: reverting it makes the author's own new test fail.
+
 ## F1 — nested `.ocmconfig` specs silently drop case-variant members
 
 `bindings/go/runtime/registry.go:461`
@@ -62,6 +78,39 @@ This concerns the stored bytes, which the PR describes as unchanged.
 ```sh
 go test ./descriptor/runtime/ -run TestReviewPR4206_F2 -count=1
 ```
+
+## F2b — the provider string still differs from what OCM v1 wrote (U+2028 / U+2029)
+
+`bindings/go/descriptor/runtime/convert_v2.go:347`
+
+The F2 fix passes `jsontext.EscapeForHTML(true)`, which covers `<`, `>` and `&`.
+`encoding/json` v1 also escaped U+2028 and U+2029, and `jsontext` puts those behind a second
+option, `EscapeForJS`. So the provider string is still not byte-identical to v1 output when a
+label carries one of those two characters.
+
+Verified against the real legacy CLI, not against the Go library in isolation: the
+repo-pinned OCM v1 (`conformance/scenarios/compatibility/.env`, `v0.54.0`) builds a component
+version, and the v2 CLI from this checkout transfers it.
+
+```text
+OCM v1 v0.54.0  {"name":"acme","labels":[{"name":"sep","value":"line1\u2028line2"},{"name":"html","value":"a\u003cb\u003ec\u0026d"}]}
+ceb9bebf3c      {"name":"acme","labels":[{"name":"sep","value":"line1<U+2028>line2"},{"name":"html","value":"a\u003cb\u003ec\u0026d"}]}
+```
+
+(`<U+2028>` is the raw character; v1 wrote the six bytes `\u2028`.)
+
+```sh
+.review/pr-4206/F2b-provider-escaping-vs-ocmv1.sh          # exit 1 on ceb9bebf3c
+```
+
+Adding `jsontext.EscapeForJS(true)` next to the existing option makes the output
+byte-identical to v1 and the script exit 0. Verified by patching, rebuilding the CLI and
+re-running the same transfer; `./descriptor/...` stays green with it, including every
+`normalisation` suite, so signatures are unaffected.
+
+Beyond digest churn, this is the case the option exists for: a raw U+2028 is valid JSON but
+not valid inside a pre-ES2019 JavaScript string literal (RFC 8259, section 12), which is why
+v1 escaped it.
 
 ## F3 — an artifact index earlier releases could read no longer opens
 
