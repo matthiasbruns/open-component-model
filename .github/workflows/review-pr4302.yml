@@ -1,0 +1,41 @@
+name: review-pr4302-windows-kill
+
+on:
+  push:
+    branches:
+    - review/pr-4302-*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: bindings/go
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      with:
+        go-version-file: bindings/go/go.mod
+        cache-dependency-path: bindings/go/go.sum
+    - name: osutil kill race probes (PR head)
+      run: go test ./plugin/internal/osutil/ -run 'TestKill|TestReviewPR4302' -count=1 -v 2>&1 | tee osutil.log; test ${PIPESTATUS[0]} -eq 0
+    - name: mutation, Kill without the access-denied normalisation must fail
+      run: |
+        sed -i 's/if err == nil || !errors.Is(err, windows.ERROR_ACCESS_DENIED) || ProcessAlive(process.Pid) {/if true {/' plugin/internal/osutil/process_windows.go
+        git diff --stat
+        if go test ./plugin/internal/osutil/ -run 'TestReviewPR4302_(SecondKill|ConcurrentKills)' -count=1 -v; then
+          echo "mutation survived: the probes do not catch the bug"; exit 1
+        fi
+        git checkout -- plugin/internal/osutil/process_windows.go
+    - name: TestPluginFlow stress (PR head)
+      run: |
+        cd plugin && go build -o tmp/testdata/test-plugin-blobtransformer.exe internal/testplugin-blobtransformer/main.go && cd ..
+        go test ./plugin/manager/registries/blobtransformer/ -run '^TestPluginFlow$' -count=100 2>&1 | tail -20; test ${PIPESTATUS[0]} -eq 0
