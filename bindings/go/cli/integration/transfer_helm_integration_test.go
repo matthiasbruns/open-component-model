@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	repo "helm.sh/helm/v4/pkg/repo/v1"
 
 	"ocm.software/open-component-model/bindings/go/cli/cmd"
 	"ocm.software/open-component-model/bindings/go/cli/cmd/configuration"
@@ -21,6 +22,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/oci/repository/provider"
 	ociaccess "ocm.software/open-component-model/bindings/go/oci/spec/access"
 	ociaccessv1 "ocm.software/open-component-model/bindings/go/oci/spec/access/v1"
+	ctfv1 "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/ctf"
 	ociv1 "ocm.software/open-component-model/bindings/go/oci/spec/repository/v1/oci"
 	ocmruntime "ocm.software/open-component-model/bindings/go/runtime"
 )
@@ -585,4 +587,87 @@ configurations:
 		// No provenance file — pass empty string for originalProvPath
 		downloadAndVerifyResource(t, ctx, targetRef, componentName, componentVersion, cfgPath, chartFile, "")
 	})
+}
+
+// Test_Integration_Transfer_HelmChart_RecordedDigest covers a Helm chart whose recorded
+// digest is the chart archive digest, as OCM v1 and v2 record it for HTTP chart repositories.
+// Copying it converts the chart into an OCI artifact with another digest, so the transfer
+// must fail instead of writing a component version that no longer verifies.
+func Test_Integration_Transfer_HelmChart_RecordedDigest(t *testing.T) {
+	ctx := t.Context()
+	r := require.New(t)
+	t.Parallel()
+
+	root := getRepoRootBasedOnGit(t)
+	chart, err := os.ReadFile(filepath.Join(root, "bindings/go/helm/testdata/mychart-0.1.0.tgz"))
+	r.NoError(err)
+	chartDir := t.TempDir()
+	r.NoError(os.WriteFile(filepath.Join(chartDir, "mychart-0.1.0.tgz"), chart, 0o600))
+	index, err := repo.IndexDirectory(chartDir, "")
+	r.NoError(err)
+	r.NoError(index.WriteFile(filepath.Join(chartDir, "index.yaml"), 0o600))
+	srv := newHelmChartRepoServer(t, chartDir)
+
+	tempdir := t.TempDir()
+	cfgPath := filepath.Join(tempdir, "ocmconfig.yaml")
+	r.NoError(os.WriteFile(cfgPath, []byte(`
+type: generic.config.ocm.software/v1
+configurations:
+- type: http.config.ocm.software/v1alpha1
+  plainHTTP: true`), os.ModePerm))
+
+	componentName := "ocm.software/test-helm-recorded-digest"
+	componentVersion := "v1.0.0"
+	constructorPath := filepath.Join(tempdir, "constructor.yaml")
+	r.NoError(os.WriteFile(constructorPath, []byte(fmt.Sprintf(`components:
+- name: %s
+  version: %s
+  provider:
+    name: ocm.software
+  resources:
+  - name: mychart
+    version: 0.1.0
+    type: helmChart
+    access:
+      type: helm/v1
+      helmRepository: %s
+      helmChart: mychart:0.1.0
+`, componentName, componentVersion, srv.URL)), os.ModePerm))
+
+	sourceCTF := filepath.Join(tempdir, "source-ctf")
+	addCMD := cmd.New()
+	addCMD.SetArgs([]string{
+		"add", "component-version",
+		"--repository", fmt.Sprintf("ctf::%s", sourceCTF),
+		"--constructor", constructorPath,
+		"--config", cfgPath,
+	})
+	r.NoError(addCMD.ExecuteContext(ctx), "creation of component version should succeed")
+
+	repoProvider := provider.NewComponentVersionRepositoryProvider(provider.WithHTTPConfig(loadHTTPConfig(t, cfgPath)))
+	sourceRepo, err := repoProvider.GetComponentVersionRepository(ctx, &ctfv1.Repository{FilePath: sourceCTF}, nil)
+	r.NoError(err)
+	sourceDesc, err := sourceRepo.GetComponentVersion(ctx, componentName, componentVersion)
+	r.NoError(err)
+	r.Len(sourceDesc.Component.Resources, 1)
+	sourceDigest := sourceDesc.Component.Resources[0].Digest
+	r.NotNil(sourceDigest, "digest processing must have hashed the chart archive at add time")
+	r.Equal("genericBlobDigest/v1", sourceDigest.NormalisationAlgorithm)
+
+	targetCTF := filepath.Join(tempdir, "target-ctf")
+	transferCMD := cmd.New()
+	transferCMD.SetArgs([]string{
+		"transfer", "component-version",
+		fmt.Sprintf("ctf::%s//%s:%s", sourceCTF, componentName, componentVersion),
+		fmt.Sprintf("ctf::%s", targetCTF),
+		"--config", cfgPath,
+		"--copy-resources",
+	})
+	transferCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	err = transferCMD.ExecuteContext(transferCtx)
+	r.ErrorContains(err, "would no longer verify against its signature")
+	r.ErrorContains(err, sourceDigest.Value)
+
+	r.NoDirExists(targetCTF, "the transfer must fail before it writes to the target")
 }

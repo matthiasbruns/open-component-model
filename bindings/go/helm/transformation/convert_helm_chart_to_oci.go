@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	godigest "github.com/opencontainers/go-digest"
 
 	"ocm.software/open-component-model/bindings/go/blob/filesystem"
+	descruntime "ocm.software/open-component-model/bindings/go/descriptor/runtime"
 	descv2 "ocm.software/open-component-model/bindings/go/descriptor/v2"
 	"ocm.software/open-component-model/bindings/go/helm/internal"
 	"ocm.software/open-component-model/bindings/go/helm/internal/oci"
@@ -17,6 +19,7 @@ import (
 	"ocm.software/open-component-model/bindings/go/oci/looseref"
 	ociaccess "ocm.software/open-component-model/bindings/go/oci/spec/access"
 	ociv2 "ocm.software/open-component-model/bindings/go/oci/spec/access/v1"
+	"ocm.software/open-component-model/bindings/go/repository/integrity"
 	"ocm.software/open-component-model/bindings/go/runtime"
 )
 
@@ -109,21 +112,8 @@ func (t *ConvertHelmChartToOCI) Transform(ctx context.Context, step runtime.Type
 	transformation.Output.Resource = transformation.Spec.Resource
 	transformation.Output.Resource.Type = access.HelmRepositoryType
 
-	var hashAlgorithm string
-	switch result.Desc.Digest.Algorithm() {
-	case godigest.SHA256:
-		hashAlgorithm = "SHA-256"
-	case godigest.SHA512:
-		hashAlgorithm = "SHA-512"
-	default:
-		return nil, fmt.Errorf("unsupported OCI manifest digest algorithm: %s", result.Desc.Digest.Algorithm())
-	}
-
-	// Use digest of top-level-manifest
-	transformation.Output.Resource.Digest = &descv2.Digest{
-		HashAlgorithm:          hashAlgorithm,
-		NormalisationAlgorithm: "ociArtifactDigest/v1",
-		Value:                  result.Desc.Digest.Encoded(),
+	if transformation.Output.Resource.Digest, err = artifactDigest(transformation.Output.Resource.Digest, result.Desc.Digest); err != nil {
+		return nil, fmt.Errorf("cannot convert helm chart of resource %q to an OCI artifact: %w", transformation.Output.Resource.Name, err)
 	}
 	slog.DebugContext(ctx, "Set OCI image imageReference digest in output resource", "value", transformation.Output.Resource.Digest.Value)
 
@@ -147,6 +137,47 @@ func (t *ConvertHelmChartToOCI) Transform(ctx context.Context, step runtime.Type
 	transformation.Output.Resource.Access = &updatedAccess
 
 	return &transformation, nil
+}
+
+// artifactDigest returns the resource digest for the converted chart with the given manifest
+// digest. A recorded digest is returned unchanged or rejected, never rewritten: signatures
+// and parent reference digests cover it.
+func artifactDigest(recorded *descv2.Digest, manifest godigest.Digest) (*descv2.Digest, error) {
+	if recorded == nil {
+		var hashAlgorithm string
+		switch manifest.Algorithm() {
+		case godigest.SHA256:
+			hashAlgorithm = "SHA-256"
+		case godigest.SHA512:
+			hashAlgorithm = "SHA-512"
+		default:
+			return nil, fmt.Errorf("unsupported OCI manifest digest algorithm: %s", manifest.Algorithm())
+		}
+		return &descv2.Digest{
+			HashAlgorithm:          hashAlgorithm,
+			NormalisationAlgorithm: "ociArtifactDigest/v1",
+			Value:                  manifest.Encoded(),
+		}, nil
+	}
+
+	if strings.EqualFold(recorded.HashAlgorithm, descv2.NoDigest) || strings.EqualFold(recorded.NormalisationAlgorithm, descv2.ExcludeFromSignature) {
+		return recorded, nil
+	}
+	want, err := integrity.ParseDigest(&descruntime.Digest{
+		HashAlgorithm:          recorded.HashAlgorithm,
+		NormalisationAlgorithm: recorded.NormalisationAlgorithm,
+		Value:                  recorded.Value,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid recorded digest: %w", err)
+	}
+	if want == "" {
+		return nil, fmt.Errorf("incomplete recorded digest: hashAlgorithm=%q, value=%q", recorded.HashAlgorithm, recorded.Value)
+	}
+	if want != manifest {
+		return nil, fmt.Errorf("the OCI artifact has digest %s, but the resource records %s (%s), so the copy would no longer verify against its signature", manifest, want, recorded.NormalisationAlgorithm)
+	}
+	return recorded, nil
 }
 
 func imageReferenceFromHelmAccess(helmAccess v1.Helm) (string, error) {

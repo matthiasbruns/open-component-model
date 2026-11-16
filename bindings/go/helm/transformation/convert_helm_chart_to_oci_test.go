@@ -406,3 +406,103 @@ func fileURI(t *testing.T, p string) string {
 	require.NoError(t, err)
 	return uri
 }
+
+func TestConvertHelmChartToOCI_RecordedDigest(t *testing.T) {
+	t.Parallel()
+
+	scheme := newConvertTestScheme()
+	chartPath, err := filepath.Abs(filepath.Join("..", "testdata", "mychart-0.1.0.tgz"))
+	require.NoError(t, err)
+
+	convert := func(t *testing.T, digest *descv2.Digest) (*v1alpha1.ConvertHelmToOCI, error) {
+		t.Helper()
+		rawAccess := runtime.Raw{}
+		require.NoError(t, access.Scheme.Convert(&v1.Helm{
+			Type:           runtime.NewVersionedType("helm", "v1"),
+			HelmRepository: "https://example.com",
+			HelmChart:      "mychart",
+			Version:        "0.1.0",
+		}, &rawAccess))
+		transform := &transformation.ConvertHelmChartToOCI{Scheme: scheme}
+		result, err := transform.Transform(t.Context(), &v1alpha1.ConvertHelmToOCI{
+			Type: runtime.NewVersionedType(v1alpha1.ConvertHelmToOCIType, v1alpha1.Version),
+			ID:   "test-convert-recorded-digest",
+			Spec: &v1alpha1.ConvertHelmToOCISpec{
+				ChartFile: filev1alpha1.File{URI: fileURI(t, chartPath)},
+				Resource: &descv2.Resource{
+					ElementMeta: descv2.ElementMeta{ObjectMeta: descv2.ObjectMeta{Name: "mychart", Version: "0.1.0"}},
+					Type:        "helmChart",
+					Access:      &rawAccess,
+					Digest:      digest,
+				},
+				OutputPath: t.TempDir(),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		output, ok := result.(*v1alpha1.ConvertHelmToOCI)
+		require.True(t, ok)
+		return output, nil
+	}
+
+	unrecorded, err := convert(t, nil)
+	require.NoError(t, err)
+	manifestDigest := unrecorded.Output.Resource.Digest.Value
+
+	tests := []struct {
+		name    string
+		digest  *descv2.Digest
+		wantErr string
+	}{
+		{
+			name: "chart archive digest recorded by an HTTP chart repository is rejected",
+			digest: &descv2.Digest{
+				HashAlgorithm:          "SHA-256",
+				NormalisationAlgorithm: "genericBlobDigest/v1",
+				Value:                  "c68fb36429431f1bf40e539e52d93e49d41b7ab9a6eaceba43e103ca7043bfcb",
+			},
+			wantErr: "would no longer verify",
+		},
+		{
+			name: "different OCI artifact digest is rejected",
+			digest: &descv2.Digest{
+				HashAlgorithm:          "SHA-256",
+				NormalisationAlgorithm: "ociArtifactDigest/v1",
+				Value:                  "0000000000000000000000000000000000000000000000000000000000000000",
+			},
+			wantErr: "would no longer verify",
+		},
+		{
+			name:    "incomplete digest is rejected",
+			digest:  &descv2.Digest{NormalisationAlgorithm: "ociArtifactDigest/v1"},
+			wantErr: "incomplete recorded digest",
+		},
+		{
+			name: "matching manifest digest is kept as recorded",
+			digest: &descv2.Digest{
+				HashAlgorithm:          "sha256",
+				NormalisationAlgorithm: "genericBlobDigest/v1",
+				Value:                  manifestDigest,
+			},
+		},
+		{
+			name:   "exclusion marker is kept",
+			digest: descv2.NewExcludeFromSignatureDigest(),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+
+			output, err := convert(t, tc.digest.DeepCopy())
+			if tc.wantErr != "" {
+				r.ErrorContains(err, tc.wantErr)
+				return
+			}
+			r.NoError(err)
+			r.Equal(tc.digest, output.Output.Resource.Digest)
+		})
+	}
+}
