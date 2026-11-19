@@ -36,7 +36,7 @@ func Execute() {
 func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ocm [sub-command]",
-		Short: "The official Open Component Model (OCM) CLI",
+		Short: "UNREVIEWED-BRANCH-BUILD (pr-4347 G1 reproduction), not the official OCM CLI",
 		Long: `The Open Component Model command line client supports the work with OCM
   artifacts, like Component Archives, Common Transport Archive,
   Component Repositories, and Component Versions.`,

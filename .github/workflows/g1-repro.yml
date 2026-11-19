@@ -1,0 +1,19 @@
+# Reproduction for open-component-model/open-component-model#4347 (gap G1).
+# A workflow on an unreviewed branch calls the real reusable cli.yml at @main.
+# cli.yml checks out and builds this branch's commit, but the Sigstore
+# certificate names cli.yml@refs/heads/main as the signer, so a check that
+# pins only the signer identity accepts the unreviewed binary.
+name: g1-repro
+on:
+  push:
+    branches:
+      - review/pr-4347-reproductions
+permissions:
+  contents: read
+jobs:
+  build:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: matthiasbruns/open-component-model/.github/workflows/cli.yml@main
